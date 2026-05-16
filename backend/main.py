@@ -1,21 +1,18 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
 from api.routes import auth, graph, llm, reports, scans
 from core.config import settings
-from core.graph_engine import graph
+from core.graph_engine import graph as graph_engine
 from core.sql_db import init_db
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    graph.setup_schema()
-    graph.seed_demo_graph()
+    graph_engine.setup_schema()
+    graph_engine.seed_demo_graph()
     yield
-    graph.close()
-
+    graph_engine.close()
 
 app = FastAPI(
     title="SecureGraph",
@@ -37,7 +34,6 @@ app.include_router(scans.router, prefix="/api/scans", tags=["scans"])
 app.include_router(graph.router, prefix="/api/graph", tags=["graph"])
 app.include_router(llm.router, prefix="/api/llm", tags=["llm"])
 app.include_router(reports.router, prefix="/api/reports", tags=["reports"])
-
 
 @app.get("/health")
 def health():
