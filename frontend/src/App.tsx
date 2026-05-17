@@ -61,7 +61,7 @@ export default function App() {
     setNoticeType(type);
   }
 
-  async function refresh() {
+  async function refresh(options: { silent?: boolean } = {}) {
     try {
       const [snapshot, attackPaths, remediationRows, scanRows] = await Promise.all([
         api.snapshot(),
@@ -74,20 +74,35 @@ export default function App() {
       setPaths(attackPaths.paths);
       setRemediations(remediationRows.remediations);
       setScans(scanRows);
-      showNotice("Live SecureGraph API connected.", "success");
+      if (!options.silent) {
+        showNotice("Live SecureGraph API connected.", "success");
+      }
     } catch {
       setNodes(demoNodes);
       setLinks(demoLinks);
       setPaths(demoPaths);
       setRemediations(demoRemediations);
       setScans([]);
-      showNotice("Using demo graph. Start Docker Compose for live scans and reports.", "info");
+      if (!options.silent) {
+        showNotice("Using demo graph. Start Docker Compose for live scans and reports.", "info");
+      }
     }
   }
 
   useEffect(() => {
     refresh();
   }, []);
+
+  useEffect(() => {
+    const hasActiveScan = scans.some((scan) => scan.status === "queued" || scan.status === "running");
+    if (tab !== "scans" || !hasActiveScan) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      refresh({ silent: true });
+    }, 2500);
+    return () => window.clearInterval(interval);
+  }, [scans, tab]);
 
   const overallRisk = useMemo(() => {
     const top = paths[0]?.risk_score || 0;
@@ -103,7 +118,7 @@ export default function App() {
     try {
       await api.scanRepo(repoUrl);
       showNotice("✓ Scan queued successfully. Results will appear shortly.", "success");
-      setTimeout(() => refresh(), 1800);
+      setTimeout(() => refresh({ silent: true }), 1200);
     } catch {
       showNotice("Scan could not be queued because the backend API is unavailable.", "error");
     } finally {
