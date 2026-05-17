@@ -13,9 +13,9 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install backend dependencies
-        run: pip install -r securegraph/backend/requirements.txt
+        run: pip install -r backend/requirements.txt
       - name: Compile Python
-        run: python -m compileall securegraph/backend
+        run: python -m compileall backend
 
   frontend:
     runs-on: ubuntu-latest
@@ -25,10 +25,10 @@ jobs:
         with:
           node-version: "22"
       - name: Install frontend dependencies
-        working-directory: securegraph/frontend
+        working-directory: frontend
         run: npm install
       - name: Build frontend
-        working-directory: securegraph/frontend
+        working-directory: frontend
         run: npm run build
 
   docker:
@@ -37,5 +37,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build compose images
-        working-directory: securegraph
         run: docker compose build

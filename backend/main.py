@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from api.middleware import RateLimitAndAuthMiddleware
 from api.routes import auth, graph, llm, reports, scans
 from core.config import settings
 from core.graph_engine import graph as graph_engine
@@ -11,6 +12,7 @@ async def lifespan(app: FastAPI):
     init_db()
     graph_engine.setup_schema()
     graph_engine.seed_demo_graph()
+    graph_engine.refresh_predictions(limit=5000)
     yield
     graph_engine.close()
 
@@ -28,6 +30,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RateLimitAndAuthMiddleware)
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(scans.router, prefix="/api/scans", tags=["scans"])

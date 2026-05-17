@@ -6,6 +6,7 @@ from typing import Any
 from neo4j import GraphDatabase
 
 from core.config import settings
+from core.ml.predictor import ExploitPredictor
 
 
 @dataclass
@@ -21,6 +22,7 @@ class GraphEngine:
             settings.neo4j_uri,
             auth=(settings.neo4j_user, settings.neo4j_password),
         )
+        self.predictor = ExploitPredictor()
 
     def close(self) -> None:
         self.driver.close()
@@ -33,6 +35,7 @@ class GraphEngine:
     def setup_schema(self) -> None:
         constraints = [
             "CREATE CONSTRAINT cve_id IF NOT EXISTS FOR (c:CVE) REQUIRE c.id IS UNIQUE",
+            "CREATE CONSTRAINT cve_cve_id IF NOT EXISTS FOR (c:CVE) REQUIRE c.cve_id IS UNIQUE",
             "CREATE CONSTRAINT package_key IF NOT EXISTS FOR (p:Package) REQUIRE (p.name, p.ecosystem, p.version) IS UNIQUE",
             "CREATE CONSTRAINT service_name IF NOT EXISTS FOR (s:Service) REQUIRE s.name IS UNIQUE",
             "CREATE CONSTRAINT server_host IF NOT EXISTS FOR (s:Server) REQUIRE s.hostname IS UNIQUE",
@@ -44,6 +47,10 @@ class GraphEngine:
             self.execute(constraint)
 
     def upsert_cve(self, cve: dict[str, Any]) -> None:
+        cve = {**cve}
+        cve["id"] = cve.get("id") or cve.get("cve_id")
+        cve["cve_id"] = cve.get("cve_id") or cve["id"]
+        cve["predicted_exploit_probability"] = self.predictor.predict(cve)
         self.execute(
             """
             MERGE (c:CVE {id: $id})
@@ -62,10 +69,63 @@ class GraphEngine:
             UNWIND $cve_ids AS cve_id
             MATCH (c:CVE {id: cve_id})
             MERGE (c)-[:AFFECTS]->(p)
+            MERGE (p)-[:AFFECTED_BY]->(c)
             """,
             **package,
             cve_ids=cve_ids,
         )
+
+    def upsert_package_vulnerability(self, package: dict[str, Any], cve: dict[str, Any]) -> None:
+        """Upsert a package-level advisory and connect it to a CVE node."""
+        self.upsert_cve(cve)
+        self.upsert_package(
+            {
+                "name": package["name"],
+                "ecosystem": package["ecosystem"],
+                "version": package.get("version", "*"),
+                "latest_version": package.get("fixed_version") or package.get("latest_version") or "latest safe release",
+            },
+            [cve["id"]],
+        )
+
+    def update_epss_scores(self, rows: list[dict[str, Any]]) -> int:
+        """Bulk update EPSS scores and refresh graph risk properties."""
+        if not rows:
+            return 0
+        self.execute(
+            """
+            UNWIND $rows AS row
+            MERGE (c:CVE {id: row.cve_id})
+            SET c.cve_id = row.cve_id,
+                c.epss_score = row.epss_score,
+                c.epss_percentile = row.epss_percentile,
+                c.exploit_in_wild = row.epss_score >= 0.75,
+                c.real_risk_score = coalesce(c.predicted_exploit_probability, row.epss_score, c.cvss_score / 10.0, 0.0)
+            """,
+            rows=rows,
+        )
+        return len(rows)
+
+    def refresh_predictions(self, limit: int = 5000) -> int:
+        """Predict exploit probability for CVEs currently stored in the graph."""
+        rows = self.execute("MATCH (c:CVE) RETURN properties(c) AS cve LIMIT $limit", limit=limit)
+        updates = []
+        for row in rows:
+            cve = row["cve"]
+            cve_id = cve.get("id") or cve.get("cve_id")
+            if cve_id:
+                updates.append({"id": cve_id, "probability": self.predictor.predict(cve)})
+        if updates:
+            self.execute(
+                """
+                UNWIND $updates AS row
+                MATCH (c:CVE {id: row.id})
+                SET c.predicted_exploit_probability = row.probability,
+                    c.real_risk_score = coalesce(row.probability, c.epss_score, c.cvss_score / 10.0, 0.0)
+                """,
+                updates=updates,
+            )
+        return len(updates)
 
     def create_service_context(self, service_name: str, packages: list[dict[str, Any]]) -> None:
         self.execute(
@@ -96,7 +156,7 @@ class GraphEngine:
             MATCH path = (cve:CVE)-[:AFFECTS]->(pkg:Package)-[:USED_BY]->(svc:Service)
                          -[:RUNS_ON]->(srv:Server)-[:STORES]->(data:BusinessData)
             WITH path, cve, pkg, svc, data,
-                 coalesce(cve.real_risk_score, cve.epss_score, cve.cvss_score / 10.0, 0.0) AS exploitability,
+                 coalesce(cve.real_risk_score, cve.predicted_exploit_probability, cve.epss_score, cve.cvss_score / 10.0, 0.0) AS exploitability,
                  CASE coalesce(data.classification, "")
                    WHEN "PCI-DSS" THEN 1.0
                    WHEN "PHI" THEN 0.95
@@ -131,7 +191,7 @@ class GraphEngine:
               label: head(labels(n)),
               name: coalesce(n.id, n.name, n.hostname, n.mitre_id),
               severity: n.severity,
-              risk: coalesce(n.real_risk_score, n.epss_score, n.cvss_score / 10.0)
+              risk: coalesce(n.real_risk_score, n.predicted_exploit_probability, n.epss_score, n.cvss_score / 10.0)
             }) AS nodes,
             collect(DISTINCT {
               source: elementId(n),
@@ -149,7 +209,7 @@ class GraphEngine:
             """
             MATCH (cve:CVE)-[:AFFECTS]->(pkg:Package)-[:USED_BY]->(svc:Service)
             WITH pkg, collect(DISTINCT cve.id) AS cves, collect(DISTINCT svc.name) AS services,
-                 sum(coalesce(cve.real_risk_score, cve.epss_score, cve.cvss_score / 10.0, 0.0)) AS risk
+                 sum(coalesce(cve.real_risk_score, cve.predicted_exploit_probability, cve.epss_score, cve.cvss_score / 10.0, 0.0)) AS risk
             RETURN pkg.name AS package_name,
                    pkg.ecosystem AS ecosystem,
                    pkg.version AS current_version,

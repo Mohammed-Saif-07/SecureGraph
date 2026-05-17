@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import uuid4
 
-from sqlalchemy import DateTime, Float, ForeignKey, String, Text, create_engine
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, String, Text, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
 from core.config import settings
@@ -31,7 +31,20 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
     org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), nullable=False)
     role: Mapped[str] = mapped_column(String, default="admin")
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    projects: Mapped[list["Project"]] = relationship(back_populates="owner")
+
+
+class Project(Base):
+    __tablename__ = "projects"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), nullable=False)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    owner: Mapped[User] = relationship(back_populates="projects")
 
 
 class Scan(Base):
@@ -39,6 +52,8 @@ class Scan(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
     org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), nullable=False)
+    user_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"))
+    project_id: Mapped[Optional[str]] = mapped_column(ForeignKey("projects.id"))
     repo_url: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String, default="queued")
     started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

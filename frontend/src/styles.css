@@ -86,6 +86,16 @@ header p, .muted {
   color: #64748b;
 }
 
+.notice {
+  background: #ecfeff;
+  border: 1px solid #67e8f9;
+  color: #155e75;
+  padding: 10px 12px;
+  border-radius: 7px;
+  margin-bottom: 16px;
+  font-weight: 700;
+}
+
 .dashboard {
   display: grid;
   grid-template-columns: minmax(260px, 340px) 1fr 1fr;

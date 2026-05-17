@@ -49,6 +49,7 @@ export default function App() {
   const [question, setQuestion] = useState("Which 3 patches give me the biggest risk reduction?");
   const [answer, setAnswer] = useState("");
   const [loading, setLoading] = useState(false);
+  const [notice, setNotice] = useState("Demo graph loaded while backend starts.");
 
   async function refresh() {
     try {
@@ -63,12 +64,14 @@ export default function App() {
       setPaths(attackPaths.paths);
       setRemediations(remediationRows.remediations);
       setScans(scanRows);
+      setNotice("Live SecureGraph API connected.");
     } catch {
       setNodes(demoNodes);
       setLinks(demoLinks);
       setPaths(demoPaths);
       setRemediations(demoRemediations);
       setScans([]);
+      setNotice("Using demo graph. Start Docker Compose for live scans and reports.");
     }
   }
 
@@ -85,7 +88,10 @@ export default function App() {
     setLoading(true);
     try {
       await api.scanRepo(repoUrl);
+      setNotice("Scan queued. Results will appear in scan history when processing completes.");
       setTimeout(() => refresh(), 1800);
+    } catch {
+      setNotice("Scan could not be queued because the backend API is unavailable.");
     } finally {
       setLoading(false);
     }
@@ -97,8 +103,10 @@ export default function App() {
       try {
         const response = await api.ask(question);
         setAnswer(response.answer);
+        setNotice("Graph-grounded answer generated.");
       } catch {
         setAnswer("Based on the demo graph, update requests to 2.31.0 first. It breaks the highest-risk chain from CVE-2023-32681 through PaymentService to PaymentDatabase and removes the 9.2/10 PCI data path.");
+        setNotice("Using local fallback answer because the LLM API is unavailable.");
       }
     } finally {
       setLoading(false);
@@ -124,6 +132,7 @@ export default function App() {
           </div>
           <a className="iconButton" href={api.reportUrl}><Download size={18} /> PDF</a>
         </header>
+        {notice && <div className="notice">{notice}</div>}
 
         {tab === "dashboard" && (
           <section className="dashboard">

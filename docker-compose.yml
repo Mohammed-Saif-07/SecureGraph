@@ -52,7 +52,10 @@ services:
       REDIS_URL: redis://redis:6379
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      NVD_API_KEY: ${NVD_API_KEY:-}
       JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
+      AUTH_REQUIRED: ${AUTH_REQUIRED:-false}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
       CORS_ORIGINS: http://localhost:5173,http://frontend:5173
     ports:
       - "8000:8000"

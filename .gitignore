@@ -15,4 +15,8 @@ dist/
 .DS_Store
 models/*.json
 models/*.pkl
+backend/core/ml/models/*.joblib
+backend/core/ml/models/*.pkl
+backend/core/ml/models/*.csv
 !backend/models/.gitkeep
+!backend/core/ml/models/.gitkeep
