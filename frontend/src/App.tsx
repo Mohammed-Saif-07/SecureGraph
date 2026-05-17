@@ -8,7 +8,7 @@ import { RemediationCard } from "./components/RemediationCard";
 import { Spinner } from "./components/Spinner";
 import "./styles.css";
 
-type Tab = "dashboard" | "graph" | "query" | "scans" | "reports";
+type Tab = "dashboard" | "graph" | "scan-graph" | "query" | "scans" | "reports";
 type NoticeType = "info" | "success" | "error";
 
 const demoNodes: GraphNode[] = [
@@ -45,6 +45,10 @@ export default function App() {
   const [nodes, setNodes] = useState<GraphNode[]>([]);
   const [links, setLinks] = useState<GraphLink[]>([]);
   const [paths, setPaths] = useState<AttackPath[]>([]);
+  const [scanGraphNodes, setScanGraphNodes] = useState<GraphNode[]>([]);
+  const [scanGraphLinks, setScanGraphLinks] = useState<GraphLink[]>([]);
+  const [scanGraphPaths, setScanGraphPaths] = useState<AttackPath[]>([]);
+  const [scanGraphTitle, setScanGraphTitle] = useState("Repo Attack Graph");
   const [remediations, setRemediations] = useState<Remediation[]>([]);
   const [scans, setScans] = useState<Scan[]>([]);
   const [repoUrl, setRepoUrl] = useState("https://github.com/pallets/flask");
@@ -126,6 +130,27 @@ export default function App() {
     }
   }
 
+  async function openScanGraph(scan: Scan) {
+    if (scan.results === 0) {
+      showNotice(scan.message || "This scan has no vulnerable dependency graph to display.", "info");
+      return;
+    }
+    setLoading(true);
+    try {
+      const graph = await api.scanGraph(scan.id);
+      setScanGraphNodes(graph.nodes);
+      setScanGraphLinks(graph.links);
+      setScanGraphPaths(graph.paths);
+      setScanGraphTitle(`Repo Attack Graph: ${scan.repo_url.replace(/^https?:\/\/github.com\//, "")}`);
+      setTab("scan-graph");
+      showNotice("✓ Repo-specific attack graph loaded.", "success");
+    } catch {
+      showNotice("Could not load the attack graph for this scan.", "error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function askGraph() {
     if (!question.trim()) {
       showNotice("Please enter a question to ask the graph.", "error");
@@ -160,7 +185,7 @@ export default function App() {
       <main>
         <header>
           <div>
-            <h1>{tab === "dashboard" ? "Attack Surface Command Center" : tab.replace("-", " ")}</h1>
+            <h1>{tab === "dashboard" ? "Attack Surface Command Center" : tab === "scan-graph" ? scanGraphTitle : tab.replace("-", " ")}</h1>
             <p>Graph-grounded vulnerability intelligence for packages, services, and business data.</p>
           </div>
           <a className="iconButton" href={api.reportUrl}><Download size={18} /> PDF</a>
@@ -196,6 +221,17 @@ export default function App() {
         )}
 
         {tab === "graph" && <GraphViewer nodes={nodes} links={links} paths={paths} />}
+
+        {tab === "scan-graph" && (
+          scanGraphNodes.length > 0 ? (
+            <GraphViewer nodes={scanGraphNodes} links={scanGraphLinks} paths={scanGraphPaths} />
+          ) : (
+            <section className="graphStage empty-state">
+              <p><strong>No repo-specific graph loaded.</strong></p>
+              <p>Open a completed scan from Scan History to view only that repository's attack graph.</p>
+            </section>
+          )
+        )}
 
         {tab === "query" && (
           <section className="query">
@@ -233,6 +269,9 @@ export default function App() {
                     <span className="scan-repo">{scan.repo_url}</span>
                     <strong>{scan.status}</strong>
                     <span>{scan.results} findings</span>
+                    <button className="secondary compact" onClick={() => openScanGraph(scan)} disabled={loading || scan.results === 0 || !scan.status.includes("completed")}>
+                      View Graph
+                    </button>
                     {scan.message && <span className="scan-message">{scan.message}</span>}
                   </div>
                 ))

@@ -21,6 +21,7 @@ export const api = {
   ask: (question: string) => request<QueryAnswer>("/api/llm/query", { method: "POST", body: JSON.stringify({ question }) }),
   scanRepo: (repo_url: string) => request<{ scan_id: string; status: string }>("/api/scans/repo", { method: "POST", body: JSON.stringify({ repo_url }) }),
   scans: () => request<Scan[]>("/api/scans"),
+  scanGraph: (scanId: string) => request<ScanGraph>(`/api/scans/${scanId}/graph`),
   reportUrl: `${API_URL}/api/reports/pdf`
 };
 
@@ -30,3 +31,4 @@ export type AttackPath = { cve_id: string; package_name: string; service_name: s
 export type Remediation = { package_name: string; current_version: string; fixed_version: string; services: string[]; cves: string[]; risk_reduction: number };
 export type QueryAnswer = { answer: string; validation: { valid: boolean; unsupported_claims: string[] }; model: string };
 export type Scan = { id: string; repo_url: string; status: string; started_at: string; completed_at?: string; results: number; message?: string | null };
+export type ScanGraph = { scan_id: string; repo_url: string; status: string; message?: string | null; nodes: GraphNode[]; links: GraphLink[]; paths: AttackPath[] };

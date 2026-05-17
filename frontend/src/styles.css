@@ -246,6 +246,26 @@ input, textarea {
   gap: 8px;
 }
 
+.secondary {
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: white;
+  color: #172033;
+  padding: 9px 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.secondary.compact {
+  min-height: 34px;
+  white-space: nowrap;
+}
+
+.secondary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .iconButton {
   background: #172033;
 }
@@ -384,7 +404,7 @@ button.primary:disabled:hover {
 
 .scan-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(180px, 220px) 92px;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 220px) 92px 110px;
   align-items: start;
 }
 

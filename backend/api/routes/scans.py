@@ -81,6 +81,58 @@ def _scan_message(scan: Scan) -> str | None:
     return None
 
 
+def _node(node_id: str, label: str, name: str, **extra):
+    return {"id": node_id, "label": label, "name": name, **{key: value for key, value in extra.items() if value is not None}}
+
+
+def _path_node(path: dict, label: str) -> dict:
+    for node in path.get("nodes", []):
+        if label in node.get("labels", []):
+            return node
+    return {}
+
+
+def _scan_graph_payload(scan: Scan) -> dict:
+    nodes: dict[str, dict] = {}
+    links: dict[tuple[str, str, str], dict] = {}
+    paths: list[dict] = []
+
+    def add_node(node: dict):
+        nodes[node["id"]] = node
+
+    def add_link(source: str, target: str, link_type: str):
+        links[(source, target, link_type)] = {"source": source, "target": target, "type": link_type}
+
+    for result in scan.results:
+        path = json.loads(result.attack_path_json)
+        cve_node = _path_node(path, "CVE")
+        package_node = _path_node(path, "Package")
+        service_node = _path_node(path, "Service")
+        server_node = _path_node(path, "Server")
+        data_node = _path_node(path, "BusinessData")
+        cve_props = cve_node.get("properties", {})
+        cve_id = path.get("cve_id") or cve_props.get("cve_id") or cve_node.get("id") or result.cve_id
+        package_name = path.get("package_name") or package_node.get("id") or result.package_name
+        service_name = path.get("service_name") or service_node.get("id") or "ScannedService"
+        data_name = path.get("data_name") or data_node.get("id") or "BusinessData"
+        server_name = server_node.get("id") or f"{service_name}.runtime"
+        severity = str(cve_props.get("severity") or "").lower() or None
+
+        add_node(_node(cve_id, "CVE", cve_id, severity=severity, risk=path.get("risk_score")))
+        add_node(_node(f"pkg:{package_name}", "Package", package_name, risk=path.get("risk_score")))
+        add_node(_node(f"svc:{service_name}", "Service", service_name))
+        add_node(_node(f"srv:{server_name}", "Server", server_name))
+        add_node(_node(f"data:{data_name}", "BusinessData", data_name))
+
+        add_link(cve_id, f"pkg:{package_name}", "AFFECTS")
+        add_link(f"pkg:{package_name}", f"svc:{service_name}", "USED_BY")
+        add_link(f"svc:{service_name}", f"srv:{server_name}", "RUNS_ON")
+        add_link(f"srv:{server_name}", f"data:{data_name}", "STORES")
+        paths.append(path)
+
+    return {"nodes": list(nodes.values()), "links": list(links.values()), "paths": paths}
+
+
 def _project_for_user(db: Session, user: User | None, project_id: str | None) -> Project | None:
     if not user:
         return None
@@ -168,4 +220,21 @@ def get_scan(scan_id: str, db: Session = Depends(get_db), user: User | None = De
             }
             for result in scan.results
         ],
+    }
+
+
+@router.get("/{scan_id}/graph")
+def get_scan_graph(scan_id: str, db: Session = Depends(get_db), user: User | None = Depends(optional_user)):
+    scan = db.get(Scan, scan_id)
+    if not scan:
+        return {"error": "not_found"}
+    if user and scan.user_id != user.id:
+        return {"error": "not_found"}
+    payload = _scan_graph_payload(scan)
+    return {
+        "scan_id": scan.id,
+        "repo_url": scan.repo_url,
+        "status": scan.status,
+        "message": _scan_message(scan),
+        **payload,
     }
