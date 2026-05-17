@@ -175,4 +175,13 @@ The deploy workflow builds Docker images, pushes to GitHub Container Registry, a
 
 ## License
 
-MIT License. See `LICENSE` for details.
+Proprietary and confidential. All rights reserved.
+
+SecureGraph is not open source. No permission is granted to use, copy, modify,
+publish, distribute, sublicense, sell, host, or create derivative works without
+prior written permission from Mohammed Saif.
+
+For commercial licensing, enterprise pilots, or acquisition discussions, contact:
+`smohammed8@seattleu.edu`.
+
+See `LICENSE` for details.
