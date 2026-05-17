@@ -13,6 +13,8 @@ dist/
 
 *.log
 .DS_Store
+*.backup
+*.tmp
 models/*.json
 models/*.pkl
 backend/core/ml/models/*.joblib

@@ -288,3 +288,131 @@ input, textarea {
     grid-template-columns: 1fr;
   }
 }
+
+/* ============================================
+   Polish & Animations (Added in Polish Update)
+   ============================================ */
+
+.spinner-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spinner-icon {
+  animation: spin 1s linear infinite;
+}
+
+.spinner-text {
+  font-weight: 500;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Better notice styling */
+.notice {
+  transition: all 0.3s ease;
+  animation: slideIn 0.3s ease-out;
+}
+
+.notice.success {
+  background: #d1fae5;
+  color: #065f46;
+  border: 1px solid #6ee7b7;
+}
+
+.notice.error {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+}
+
+.notice.info {
+  background: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #93c5fd;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Empty states */
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: #6b7280;
+}
+
+.empty-state p {
+  margin: 8px 0;
+}
+
+.empty-state strong {
+  color: #374151;
+}
+
+/* Button disabled state */
+button.primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: #6b7280;
+}
+
+button.primary:disabled:hover {
+  background: #6b7280;
+}
+
+/* Scan row hover */
+.row {
+  transition: background 0.2s ease;
+}
+
+.row:hover {
+  background: #f9fafb;
+}
+
+.scan-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 220px) 92px;
+  align-items: start;
+}
+
+.scan-repo {
+  overflow-wrap: anywhere;
+}
+
+.scan-row strong {
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.scan-message {
+  grid-column: 1 / -1;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.scan-row.scan-error {
+  border-color: #fca5a5;
+  background: #fff7f7;
+}
+
+.scan-row.scan-error .scan-message,
+.scan-row.scan-error strong {
+  color: #991b1b;
+}
+
+.scan-row.scan-success strong {
+  color: #065f46;
+}

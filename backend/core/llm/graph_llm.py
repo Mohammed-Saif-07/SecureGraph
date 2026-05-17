@@ -1,7 +1,6 @@
 from __future__ import annotations
-
+import json
 import httpx
-
 from core.attack_path.remediation import ranked_remediations
 from core.config import settings
 from core.graph_engine import graph
@@ -10,15 +9,66 @@ from core.llm.validator import validate_answer
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
+# Maximum context size in bytes to stay under Groq API limit.
+MAX_CONTEXT_SIZE_BYTES = 10000
+
+
+def _json_size(value: object) -> int:
+    """Return serialized JSON size in bytes."""
+    return len(json.dumps(value, default=str).encode("utf-8"))
+
+
+def _trim_snapshot(snapshot: dict) -> bool:
+    """Trim lowest-priority graph snapshot items first."""
+    links = snapshot.get("links") or []
+    nodes = snapshot.get("nodes") or []
+    if links:
+        snapshot["links"] = links[: max(len(links) // 2, 0)]
+        return True
+    if nodes:
+        snapshot["nodes"] = nodes[: max(len(nodes) // 2, 0)]
+        return True
+    return False
+
+
+def _truncate_context(context: dict, max_size: int = MAX_CONTEXT_SIZE_BYTES) -> dict:
+    """Truncate all graph context fields until the total payload fits."""
+    context = json.loads(json.dumps(context, default=str))
+    while _json_size(context) > max_size:
+        snapshot = context.get("snapshot")
+        if isinstance(snapshot, dict) and _trim_snapshot(snapshot):
+            continue
+        remediations = context.get("remediations") or []
+        if len(remediations) > 1:
+            context["remediations"] = remediations[:-1]
+            continue
+        if len(remediations) == 1:
+            context.pop("remediations", None)
+            continue
+        paths = context.get("attack_paths") or []
+        if len(paths) > 1:
+            context["attack_paths"] = paths[:-1]
+            continue
+        if len(paths) == 1 and _json_size(paths[0]) > max_size:
+            context["attack_paths"] = []
+            continue
+        if snapshot:
+            context.pop("snapshot", None)
+            continue
+        break
+    return context
+
 
 def graph_context(question: str) -> dict:
     lowered = question.lower()
-    context = {"attack_paths": graph.attack_paths(limit=10)}
+    raw_paths = graph.attack_paths(limit=10)
+    context = {"attack_paths": raw_paths}
+
     if "patch" in lowered or "fix" in lowered or "remediation" in lowered:
         context["remediations"] = ranked_remediations(limit=5)
     if "graph" in lowered or "show" in lowered:
         context["snapshot"] = graph.graph_snapshot()
-    return context
+    return _truncate_context(context)
 
 
 def deterministic_answer(question: str, context: dict) -> str:
@@ -49,15 +99,30 @@ async def answer_question(question: str) -> dict:
     if not settings.groq_api_key:
         answer = deterministic_answer(question, context)
         return {"answer": answer, "context": context, "validation": validate_answer(answer, context), "model": "deterministic-local"}
+
     messages = build_graph_prompt(question, context)
     headers = {"Authorization": f"Bearer {settings.groq_api_key}", "Content-Type": "application/json"}
     payload = {"model": "llama-3.1-8b-instant", "messages": messages, "temperature": 0.1}
-    async with httpx.AsyncClient(timeout=45) as client:
-        response = await client.post(GROQ_URL, headers=headers, json=payload)
-        response.raise_for_status()
-    answer = response.json()["choices"][0]["message"]["content"]
-    validation = validate_answer(answer, context)
-    if not validation["valid"]:
+
+    # Try Groq API with smart fallback on any error
+    try:
+        async with httpx.AsyncClient(timeout=45) as client:
+            response = await client.post(GROQ_URL, headers=headers, json=payload)
+            response.raise_for_status()
+        answer = response.json()["choices"][0]["message"]["content"]
+        validation = validate_answer(answer, context)
+        if not validation["valid"]:
+            answer = deterministic_answer(question, context)
+            validation = validate_answer(answer, context)
+        return {"answer": answer, "context": context, "validation": validation, "model": "llama-3.1-8b-instant"}
+    except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+        # Fallback to deterministic answer on API errors (413, timeout, etc.)
         answer = deterministic_answer(question, context)
         validation = validate_answer(answer, context)
-    return {"answer": answer, "context": context, "validation": validation, "model": "llama-3.1-8b-instant"}
+        return {
+            "answer": answer,
+            "context": context,
+            "validation": validation,
+            "model": "deterministic-fallback",
+            "error": f"LLM API error: {type(exc).__name__}"
+        }

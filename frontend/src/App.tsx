@@ -5,9 +5,11 @@ import { GraphViewer } from "./components/GraphViewer";
 import { RiskGauge } from "./components/RiskGauge";
 import { AttackPathList } from "./components/AttackPath";
 import { RemediationCard } from "./components/RemediationCard";
+import { Spinner } from "./components/Spinner";
 import "./styles.css";
 
 type Tab = "dashboard" | "graph" | "query" | "scans" | "reports";
+type NoticeType = "info" | "success" | "error";
 
 const demoNodes: GraphNode[] = [
   { id: "1", label: "CVE", name: "CVE-2023-32681", severity: "critical", risk: 0.92 },
@@ -49,7 +51,15 @@ export default function App() {
   const [question, setQuestion] = useState("Which 3 patches give me the biggest risk reduction?");
   const [answer, setAnswer] = useState("");
   const [loading, setLoading] = useState(false);
+  const [scanLoading, setScanLoading] = useState(false);
+  const [queryLoading, setQueryLoading] = useState(false);
   const [notice, setNotice] = useState("Demo graph loaded while backend starts.");
+  const [noticeType, setNoticeType] = useState<NoticeType>("info");
+
+  function showNotice(message: string, type: NoticeType = "info") {
+    setNotice(message);
+    setNoticeType(type);
+  }
 
   async function refresh() {
     try {
@@ -64,14 +74,14 @@ export default function App() {
       setPaths(attackPaths.paths);
       setRemediations(remediationRows.remediations);
       setScans(scanRows);
-      setNotice("Live SecureGraph API connected.");
+      showNotice("Live SecureGraph API connected.", "success");
     } catch {
       setNodes(demoNodes);
       setLinks(demoLinks);
       setPaths(demoPaths);
       setRemediations(demoRemediations);
       setScans([]);
-      setNotice("Using demo graph. Start Docker Compose for live scans and reports.");
+      showNotice("Using demo graph. Start Docker Compose for live scans and reports.", "info");
     }
   }
 
@@ -85,31 +95,39 @@ export default function App() {
   }, [paths]);
 
   async function submitScan() {
-    setLoading(true);
+    if (!repoUrl.trim()) {
+      showNotice("Please enter a valid GitHub repository URL.", "error");
+      return;
+    }
+    setScanLoading(true);
     try {
       await api.scanRepo(repoUrl);
-      setNotice("Scan queued. Results will appear in scan history when processing completes.");
+      showNotice("✓ Scan queued successfully. Results will appear shortly.", "success");
       setTimeout(() => refresh(), 1800);
     } catch {
-      setNotice("Scan could not be queued because the backend API is unavailable.");
+      showNotice("Scan could not be queued because the backend API is unavailable.", "error");
     } finally {
-      setLoading(false);
+      setScanLoading(false);
     }
   }
 
   async function askGraph() {
-    setLoading(true);
+    if (!question.trim()) {
+      showNotice("Please enter a question to ask the graph.", "error");
+      return;
+    }
+    setQueryLoading(true);
     try {
       try {
         const response = await api.ask(question);
         setAnswer(response.answer);
-        setNotice("Graph-grounded answer generated.");
+        showNotice("✓ Graph-grounded answer generated.", "success");
       } catch {
         setAnswer("Based on the demo graph, update requests to 2.31.0 first. It breaks the highest-risk chain from CVE-2023-32681 through PaymentService to PaymentDatabase and removes the 9.2/10 PCI data path.");
-        setNotice("Using local fallback answer because the LLM API is unavailable.");
+        showNotice("Using local fallback answer because the LLM API is unavailable.", "info");
       }
     } finally {
-      setLoading(false);
+      setQueryLoading(false);
     }
   }
 
@@ -132,18 +150,32 @@ export default function App() {
           </div>
           <a className="iconButton" href={api.reportUrl}><Download size={18} /> PDF</a>
         </header>
-        {notice && <div className="notice">{notice}</div>}
+        {notice && <div className={`notice ${noticeType}`}>{notice}</div>}
 
         {tab === "dashboard" && (
           <section className="dashboard">
             <RiskGauge value={overallRisk} />
             <div className="panel">
               <h2>Highest Risk Paths</h2>
-              <AttackPathList paths={paths.slice(0, 4)} />
+              {paths.length > 0 ? (
+                <AttackPathList paths={paths.slice(0, 4)} />
+              ) : (
+                <div className="empty-state">
+                  <p><strong>No attack paths detected yet.</strong></p>
+                  <p>Scan a repository to discover vulnerabilities.</p>
+                </div>
+              )}
             </div>
             <div className="panel">
               <h2>Patch ROI</h2>
-              {remediations.slice(0, 3).map((item) => <RemediationCard key={item.package_name} item={item} />)}
+              {remediations.length > 0 ? (
+                remediations.slice(0, 3).map((item) => <RemediationCard key={item.package_name} item={item} />)
+              ) : (
+                <div className="empty-state">
+                  <p><strong>No remediations available.</strong></p>
+                  <p>Run a scan to see patch recommendations.</p>
+                </div>
+              )}
             </div>
           </section>
         )}
@@ -152,8 +184,15 @@ export default function App() {
 
         {tab === "query" && (
           <section className="query">
-            <textarea value={question} onChange={(event) => setQuestion(event.target.value)} />
-            <button className="primary" onClick={askGraph} disabled={loading}>Ask Graph</button>
+            <textarea
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
+              placeholder="Ask anything about your security graph..."
+              disabled={queryLoading}
+            />
+            <button className="primary" onClick={askGraph} disabled={queryLoading}>
+              {queryLoading ? <Spinner text="Analyzing graph..." /> : "Ask Graph"}
+            </button>
             {answer && <pre className="answer">{answer}</pre>}
           </section>
         )}
@@ -161,18 +200,33 @@ export default function App() {
         {tab === "scans" && (
           <section className="scans">
             <div className="scanBox">
-              <input value={repoUrl} onChange={(event) => setRepoUrl(event.target.value)} />
-              <button className="primary" onClick={submitScan} disabled={loading}>Scan Repo</button>
+              <input
+                value={repoUrl}
+                onChange={(event) => setRepoUrl(event.target.value)}
+                placeholder="https://github.com/owner/repo"
+                disabled={scanLoading}
+              />
+              <button className="primary" onClick={submitScan} disabled={scanLoading}>
+                {scanLoading ? <Spinner text="Scanning..." /> : "Scan Repo"}
+              </button>
             </div>
             <div className="panel">
               <h2>Scan History</h2>
-              {scans.map((scan) => (
-                <div className="row" key={scan.id}>
-                  <span>{scan.repo_url}</span>
-                  <strong>{scan.status}</strong>
-                  <span>{scan.results} findings</span>
+              {scans.length > 0 ? (
+                scans.map((scan) => (
+                  <div className={`row scan-row ${scan.status.startsWith("failed") ? "scan-error" : scan.status.includes("completed") ? "scan-success" : ""}`} key={scan.id}>
+                    <span className="scan-repo">{scan.repo_url}</span>
+                    <strong>{scan.status}</strong>
+                    <span>{scan.results} findings</span>
+                    {scan.message && <span className="scan-message">{scan.message}</span>}
+                  </div>
+                ))
+              ) : (
+                <div className="empty-state">
+                  <p><strong>No scans yet.</strong></p>
+                  <p>Enter a GitHub repository URL above to scan for vulnerabilities.</p>
                 </div>
-              ))}
+              )}
             </div>
           </section>
         )}

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import re
 import tempfile
 from pathlib import Path
@@ -9,6 +11,14 @@ from urllib.parse import urlparse
 
 from core.graph_engine import graph
 from core.ingestion.osv_ingester import query_osv
+
+logger = logging.getLogger(__name__)
+NO_DEPENDENCY_MESSAGE = "No dependency files (requirements.txt, package.json) found in repository"
+REPO_ACCESS_MESSAGE = "Repository not accessible. Check URL or provide GitHub token in .env"
+
+
+class ScanError(Exception):
+    """Raised when a repository cannot be scanned safely."""
 
 
 def parse_requirements(text: str) -> list[dict]:
@@ -40,15 +50,20 @@ def _safe_repo_name(url: str) -> str:
     return bits[-1].replace(".git", "") if bits else "ImportedService"
 
 
+def _clone_url(repo_url: str) -> str:
+    """Inject GitHub token into HTTPS clone URL when configured."""
+    token = os.getenv("GITHUB_TOKEN", "")
+    if not token or not repo_url.startswith("https://github.com/"):
+        return repo_url
+    return repo_url.replace("https://github.com/", f"https://x-access-token:{token}@github.com/", 1)
+
+
 def extract_dependencies_from_repo(repo_url: str) -> tuple[str, list[dict]]:
     with tempfile.TemporaryDirectory() as tmp:
-        result = run(["git", "clone", "--depth", "1", repo_url, tmp], capture_output=True, text=True, timeout=45)
+        result = run(["git", "clone", "--depth", "1", _clone_url(repo_url), tmp], capture_output=True, text=True, timeout=45)
         if result.returncode != 0:
-            return "DemoPaymentService", [
-                {"name": "requests", "version": "2.28.0", "ecosystem": "PyPI"},
-                {"name": "flask", "version": "2.0.1", "ecosystem": "PyPI"},
-                {"name": "pyjwt", "version": "2.6.0", "ecosystem": "PyPI"},
-            ]
+            logger.warning("Repository clone failed for %s: %s", repo_url, result.stderr.strip())
+            raise ScanError(REPO_ACCESS_MESSAGE)
         root = Path(tmp)
         packages: list[dict] = []
         req = root / "requirements.txt"
@@ -57,6 +72,8 @@ def extract_dependencies_from_repo(repo_url: str) -> tuple[str, list[dict]]:
             packages.extend(parse_requirements(req.read_text()))
         if pkg.exists():
             packages.extend(parse_package_json(pkg.read_text()))
+        if not packages:
+            logger.info("No dependency manifests found while scanning %s", repo_url)
         return _safe_repo_name(repo_url), packages
 
 
@@ -108,4 +125,6 @@ async def scan_packages(service_name: str, packages: list[dict]) -> dict:
 
 async def scan_repo(repo_url: str) -> dict:
     service_name, packages = extract_dependencies_from_repo(repo_url)
+    if not packages:
+        return {"service": service_name, "packages": [], "results": [], "attack_paths": [], "message": NO_DEPENDENCY_MESSAGE}
     return await scan_packages(service_name, packages)

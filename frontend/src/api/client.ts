@@ -29,4 +29,4 @@ export type GraphLink = { source: string; target: string; type: string };
 export type AttackPath = { cve_id: string; package_name: string; service_name: string; data_name: string; risk_score: number; hops: number };
 export type Remediation = { package_name: string; current_version: string; fixed_version: string; services: string[]; cves: string[]; risk_reduction: number };
 export type QueryAnswer = { answer: string; validation: { valid: boolean; unsupported_claims: string[] }; model: string };
-export type Scan = { id: string; repo_url: string; status: string; started_at: string; completed_at?: string; results: number };
+export type Scan = { id: string; repo_url: string; status: string; started_at: string; completed_at?: string; results: number; message?: string | null };

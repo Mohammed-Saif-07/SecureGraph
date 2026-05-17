@@ -58,6 +58,7 @@ class Scan(Base):
     status: Mapped[str] = mapped_column(String, default="queued")
     started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    total_findings: Mapped[Optional[int]] = mapped_column(default=0)
     results: Mapped[list["ScanResult"]] = relationship(back_populates="scan")
 
 
