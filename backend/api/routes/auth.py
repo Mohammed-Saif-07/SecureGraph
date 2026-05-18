@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
+import secrets
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
@@ -12,7 +14,7 @@ from core.config import settings
 from core.sql_db import Organization, Project, User, get_db
 
 router = APIRouter()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+HASH_ITERATIONS = 260_000
 
 
 class RegisterRequest(BaseModel):
@@ -24,6 +26,25 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr = Field(..., examples=["founder@example.com"])
     password: str = Field(..., examples=["change-this-password"])
+
+
+def hash_password(password: str) -> str:
+    """Hash a password using a portable stdlib PBKDF2 format."""
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), HASH_ITERATIONS)
+    return f"pbkdf2_sha256${HASH_ITERATIONS}${salt}${digest.hex()}"
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    """Verify a password against the stored hash."""
+    try:
+        algorithm, iterations, salt, expected = password_hash.split("$", 3)
+        if algorithm != "pbkdf2_sha256":
+            return False
+        digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), int(iterations))
+        return hmac.compare_digest(digest.hex(), expected)
+    except Exception:
+        return False
 
 
 def _token(user: User, token_type: str, expires_delta: timedelta) -> str:
@@ -88,7 +109,7 @@ def register(request: RegisterRequest, db: Session = Depends(get_db)):
     org = Organization(name=request.organization)
     db.add(org)
     db.flush()
-    user = User(email=request.email, password_hash=pwd_context.hash(request.password), org_id=org.id)
+    user = User(email=request.email, password_hash=hash_password(request.password), org_id=org.id)
     db.add(user)
     db.flush()
     db.add(Project(org_id=org.id, user_id=user.id, name="Default Project"))
@@ -100,7 +121,7 @@ def register(request: RegisterRequest, db: Session = Depends(get_db)):
 @router.post("/login")
 def login(request: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == request.email).first()
-    if not user or not pwd_context.verify(request.password, user.password_hash):
+    if not user or not verify_password(request.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     return {**create_token_pair(user), "user": user_payload(user)}
 
