@@ -127,7 +127,20 @@ class GraphEngine:
             )
         return len(updates)
 
-    def create_service_context(self, service_name: str, packages: list[dict[str, Any]]) -> None:
+    def create_service_context(
+        self,
+        service_name: str,
+        packages: list[dict[str, Any]],
+        data_name: str | None = None,
+        data_classification: str = "ApplicationData",
+        regulatory_requirement: str = "Unclassified",
+    ) -> None:
+        """Attach scanned packages to a service and a default business data node.
+
+        Real enterprise installs should replace this inferred context with cloud,
+        Kubernetes, CMDB, or manually approved asset mappings.
+        """
+        data_name = data_name or f"{service_name} Data Store"
         self.execute(
             """
             MERGE (svc:Service {name: $service_name})
@@ -136,8 +149,9 @@ class GraphEngine:
                 svc.owner_team = coalesce(svc.owner_team, "platform")
             MERGE (srv:Server {hostname: $host})
             SET srv.ip = "10.0.8.15", srv.environment = "production", srv.cloud_provider = "local"
-            MERGE (data:BusinessData {name: "PaymentDatabase"})
-            SET data.classification = "PCI-DSS", data.regulatory_requirement = "PCI-DSS"
+            MERGE (data:BusinessData {name: $data_name})
+            SET data.classification = $data_classification,
+                data.regulatory_requirement = $regulatory_requirement
             MERGE (svc)-[:RUNS_ON]->(srv)
             MERGE (srv)-[:STORES]->(data)
             WITH svc
@@ -147,6 +161,9 @@ class GraphEngine:
             """,
             service_name=service_name,
             host=f"{service_name.lower()}.prod.local",
+            data_name=data_name,
+            data_classification=data_classification,
+            regulatory_requirement=regulatory_requirement,
             packages=packages,
         )
 
@@ -271,8 +288,20 @@ class GraphEngine:
         ]
         for package, cves in zip(packages, [["CVE-2023-32681"], ["CVE-2023-44487"], ["CVE-2024-1234"]]):
             self.upsert_package(package, cves)
-        self.create_service_context("PaymentService", packages[:2])
-        self.create_service_context("AdminAPI", packages[2:])
+        self.create_service_context(
+            "PaymentService",
+            packages[:2],
+            data_name="PaymentDatabase",
+            data_classification="PCI-DSS",
+            regulatory_requirement="PCI-DSS",
+        )
+        self.create_service_context(
+            "AdminAPI",
+            packages[2:],
+            data_name="PaymentDatabase",
+            data_classification="PCI-DSS",
+            regulatory_requirement="PCI-DSS",
+        )
         self.execute(
             """
             MERGE (actor:ThreatActor {name: "APT28"})
