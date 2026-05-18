@@ -59,10 +59,31 @@ def _truncate_context(context: dict, max_size: int = MAX_CONTEXT_SIZE_BYTES) -> 
     return context
 
 
+def _service_filter(question: str) -> str | None:
+    """Return a known service name when the user scopes the question to it."""
+    lowered = question.lower()
+    try:
+        rows = graph.execute("MATCH (s:Service) RETURN s.name AS name LIMIT 200")
+    except Exception:
+        return None
+    service_names = sorted(
+        (row.get("name") for row in rows if row.get("name")),
+        key=len,
+        reverse=True,
+    )
+    for service_name in service_names:
+        if service_name.lower() in lowered:
+            return service_name
+    return None
+
+
 def graph_context(question: str) -> dict:
     lowered = question.lower()
-    raw_paths = graph.attack_paths(limit=10)
+    service_name = _service_filter(question)
+    raw_paths = graph.attack_paths(limit=10, service_name=service_name)
     context = {"attack_paths": raw_paths}
+    if service_name:
+        context["service_filter"] = service_name
 
     if "patch" in lowered or "fix" in lowered or "remediation" in lowered:
         context["remediations"] = ranked_remediations(limit=5)

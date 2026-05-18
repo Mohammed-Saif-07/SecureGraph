@@ -119,7 +119,7 @@ async def scan_packages(service_name: str, packages: list[dict]) -> dict:
             matched_packages.append(package_with_latest)
     if matched_packages:
         graph.create_service_context(service_name, matched_packages)
-    paths = graph.attack_paths()
+    paths = graph.attack_paths(service_name=service_name)
     return {"service": service_name, "packages": packages, "results": results, "attack_paths": paths}
 
 

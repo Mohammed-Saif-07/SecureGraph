@@ -134,6 +134,7 @@ class GraphEngine:
         data_name: str | None = None,
         data_classification: str = "ApplicationData",
         regulatory_requirement: str = "Unclassified",
+        replace_data_context: bool = True,
     ) -> None:
         """Attach scanned packages to a service and a default business data node.
 
@@ -153,6 +154,15 @@ class GraphEngine:
             SET data.classification = $data_classification,
                 data.regulatory_requirement = $regulatory_requirement
             MERGE (svc)-[:RUNS_ON]->(srv)
+            WITH svc, srv, data
+            CALL {
+              WITH srv
+              WITH srv WHERE $replace_data_context = true
+              OPTIONAL MATCH (srv)-[old_store:STORES]->(old_data:BusinessData)
+              WHERE old_data.name <> $data_name
+              DELETE old_store
+            }
+            WITH svc, srv, data
             MERGE (srv)-[:STORES]->(data)
             WITH svc
             UNWIND $packages AS pkg
@@ -164,14 +174,16 @@ class GraphEngine:
             data_name=data_name,
             data_classification=data_classification,
             regulatory_requirement=regulatory_requirement,
+            replace_data_context=replace_data_context,
             packages=packages,
         )
 
-    def attack_paths(self, limit: int = 25) -> list[dict[str, Any]]:
+    def attack_paths(self, limit: int = 25, service_name: str | None = None) -> list[dict[str, Any]]:
         return self.execute(
             """
             MATCH path = (cve:CVE)-[:AFFECTS]->(pkg:Package)-[:USED_BY]->(svc:Service)
                          -[:RUNS_ON]->(srv:Server)-[:STORES]->(data:BusinessData)
+            WHERE $service_name IS NULL OR svc.name = $service_name
             WITH path, cve, pkg, svc, data,
                  coalesce(cve.real_risk_score, cve.predicted_exploit_probability, cve.epss_score, cve.cvss_score / 10.0, 0.0) AS exploitability,
                  CASE coalesce(data.classification, "")
@@ -196,6 +208,7 @@ class GraphEngine:
             LIMIT $limit
             """,
             limit=limit,
+            service_name=service_name,
         )
 
     def graph_snapshot(self) -> dict[str, Any]:
