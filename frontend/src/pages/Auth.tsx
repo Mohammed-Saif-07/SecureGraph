@@ -24,8 +24,9 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: (user: User) =>
       localStorage.setItem("securegraph_access_token", response.access_token);
       localStorage.setItem("securegraph_refresh_token", response.refresh_token);
       onAuthenticated(response.user);
-    } catch {
-      setError(mode === "register" ? "Registration failed. Try a different email." : "Login failed. Check your email and password.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "";
+      setError(message || (mode === "register" ? "Registration failed. Try a different email." : "Login failed. Check your email and password."));
     } finally {
       setLoading(false);
     }

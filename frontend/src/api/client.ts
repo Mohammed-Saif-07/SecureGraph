@@ -15,7 +15,15 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     }
   });
   if (!response.ok) {
-    throw new Error(await response.text());
+    const text = await response.text();
+    let message = text;
+    try {
+      const parsed = JSON.parse(text);
+      message = parsed.detail || text;
+    } catch {
+      message = text;
+    }
+    throw new Error(message || `Request failed with status ${response.status}`);
   }
   return response.json();
 }
