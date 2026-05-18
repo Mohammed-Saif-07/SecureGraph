@@ -34,11 +34,19 @@ async def _auto_import_nvd_if_needed() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
-    graph_engine.setup_schema()
-    graph_engine.seed_demo_graph()
-    graph_engine.refresh_predictions(limit=5000)
-    asyncio.create_task(_auto_import_nvd_if_needed())
+    try:
+        init_db()
+    except Exception:
+        logger.exception("PostgreSQL startup initialization failed")
+
+    try:
+        graph_engine.setup_schema()
+        graph_engine.seed_demo_graph()
+        graph_engine.refresh_predictions(limit=5000)
+        asyncio.create_task(_auto_import_nvd_if_needed())
+    except Exception:
+        logger.exception("Neo4j startup initialization failed")
+
     yield
     graph_engine.close()
 
