@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { Activity, Download, GitBranch, MessageSquare, Radar, ShieldAlert } from "lucide-react";
-import { api, AttackPath, GraphLink, GraphNode, Remediation, Scan } from "./api/client";
+import { Activity, Download, GitBranch, LogOut, MessageSquare, Radar, ShieldAlert, UserRound } from "lucide-react";
+import { api, AttackPath, GraphLink, GraphNode, Remediation, Scan, User } from "./api/client";
 import { GraphViewer } from "./components/GraphViewer";
 import { RiskGauge } from "./components/RiskGauge";
 import { AttackPathList } from "./components/AttackPath";
 import { RemediationCard } from "./components/RemediationCard";
 import { Spinner } from "./components/Spinner";
+import { AuthPage } from "./pages/Auth";
 import "./styles.css";
 
-type Tab = "dashboard" | "graph" | "scan-graph" | "query" | "scans" | "reports";
+type Tab = "dashboard" | "graph" | "scan-graph" | "query" | "scans" | "reports" | "auth";
 type NoticeType = "info" | "success" | "error";
 
 const demoNodes: GraphNode[] = [
@@ -59,6 +60,7 @@ export default function App() {
   const [queryLoading, setQueryLoading] = useState(false);
   const [notice, setNotice] = useState("Demo graph loaded while backend starts.");
   const [noticeType, setNoticeType] = useState<NoticeType>("info");
+  const [user, setUser] = useState<User | null>(null);
 
   function showNotice(message: string, type: NoticeType = "info") {
     setNotice(message);
@@ -95,6 +97,12 @@ export default function App() {
 
   useEffect(() => {
     refresh();
+    if (localStorage.getItem("securegraph_access_token")) {
+      api.me().then((response) => setUser(response.user)).catch(() => {
+        localStorage.removeItem("securegraph_access_token");
+        localStorage.removeItem("securegraph_refresh_token");
+      });
+    }
   }, []);
 
   useEffect(() => {
@@ -171,6 +179,14 @@ export default function App() {
     }
   }
 
+  function logout() {
+    api.logout().catch(() => undefined);
+    localStorage.removeItem("securegraph_access_token");
+    localStorage.removeItem("securegraph_refresh_token");
+    setUser(null);
+    showNotice("Signed out. Demo access is still available.", "info");
+  }
+
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -180,6 +196,13 @@ export default function App() {
         <button className={tab === "query" ? "active" : ""} onClick={() => setTab("query")}><MessageSquare size={18} /> Query</button>
         <button className={tab === "scans" ? "active" : ""} onClick={() => setTab("scans")}><Activity size={18} /> Scans</button>
         <button className={tab === "reports" ? "active" : ""} onClick={() => setTab("reports")}><Download size={18} /> Reports</button>
+        <button className={tab === "auth" ? "active" : ""} onClick={() => setTab("auth")}><UserRound size={18} /> {user ? "Account" : "Sign In"}</button>
+        {user && (
+          <div className="userBadge">
+            <span>{user.email}</span>
+            <button onClick={logout} aria-label="Sign out"><LogOut size={16} /> Sign Out</button>
+          </div>
+        )}
       </aside>
 
       <main>
@@ -221,6 +244,13 @@ export default function App() {
         )}
 
         {tab === "graph" && <GraphViewer nodes={nodes} links={links} paths={paths} />}
+
+        {tab === "auth" && <AuthPage onAuthenticated={(nextUser) => {
+          setUser(nextUser);
+          setTab("dashboard");
+          showNotice("Signed in successfully.", "success");
+          refresh({ silent: true });
+        }} />}
 
         {tab === "scan-graph" && (
           scanGraphNodes.length > 0 ? (

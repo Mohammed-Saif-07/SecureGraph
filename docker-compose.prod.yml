@@ -63,6 +63,7 @@ services:
       NVD_API_KEY: ${NVD_API_KEY:-}
       JWT_SECRET: ${JWT_SECRET}
       AUTH_REQUIRED: "true"
+      RATE_LIMIT_ENABLED: "true"
       CORS_ORIGINS: ${CORS_ORIGINS}
     ports:
       - "8000:8000"

@@ -4,6 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    environment: str = "development"
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"
     neo4j_password: str = "password"
@@ -19,6 +20,10 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     scan_rate_limit_per_day: int = 100
     query_rate_limit_per_day: int = 1000
+    auto_import_nvd: bool = False
+    nvd_import_months: int = 1
+    nvd_import_max_pages: int = 1
+    nvd_import_min_cves: int = 1000
     cors_origins_raw: str = Field(default="http://localhost:5173", validation_alias="CORS_ORIGINS")
 
     @cached_property

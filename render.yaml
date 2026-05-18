@@ -1,0 +1,40 @@
+services:
+  - type: web
+    name: securegraph-backend
+    runtime: python
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: NEO4J_URI
+        sync: false
+      - key: NEO4J_USER
+        sync: false
+      - key: NEO4J_PASSWORD
+        sync: false
+      - key: POSTGRES_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: NVD_API_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: AUTH_REQUIRED
+        value: "false"
+      - key: RATE_LIMIT_ENABLED
+        value: "true"
+      - key: AUTO_IMPORT_NVD
+        value: "true"
+      - key: NVD_IMPORT_MONTHS
+        value: "1"
+      - key: NVD_IMPORT_MAX_PAGES
+        value: "1"
+      - key: NVD_IMPORT_MIN_CVES
+        value: "1000"

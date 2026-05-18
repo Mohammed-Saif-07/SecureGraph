@@ -47,6 +47,11 @@ def create_token_pair(user: User) -> dict:
     }
 
 
+def user_payload(user: User) -> dict:
+    """Return user fields that are safe for the frontend."""
+    return {"id": user.id, "email": user.email, "org_id": user.org_id, "role": user.role}
+
+
 def decode_token(token: str) -> dict:
     """Decode and validate a JWT."""
     try:
@@ -89,7 +94,7 @@ def register(request: RegisterRequest, db: Session = Depends(get_db)):
     db.add(Project(org_id=org.id, user_id=user.id, name="Default Project"))
     db.commit()
     db.refresh(user)
-    return {**create_token_pair(user), "user": {"id": user.id, "email": user.email, "org_id": user.org_id}}
+    return {**create_token_pair(user), "user": user_payload(user)}
 
 
 @router.post("/login")
@@ -97,7 +102,7 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == request.email).first()
     if not user or not pwd_context.verify(request.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    return {**create_token_pair(user), "user": {"id": user.id, "email": user.email, "org_id": user.org_id}}
+    return {**create_token_pair(user), "user": user_payload(user)}
 
 
 @router.post("/refresh")
@@ -111,3 +116,13 @@ def refresh_token(authorization: str | None = Header(default=None), db: Session 
     if not user:
         raise HTTPException(status_code=401, detail="User no longer exists")
     return create_token_pair(user)
+
+
+@router.get("/me")
+def me(user: User = Depends(current_user)):
+    return {"user": user_payload(user)}
+
+
+@router.post("/logout")
+def logout():
+    return {"status": "ok"}
