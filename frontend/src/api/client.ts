@@ -36,7 +36,11 @@ export const api = {
   snapshot: () => request<{ nodes: GraphNode[]; links: GraphLink[] }>("/api/graph/snapshot"),
   attackPaths: () => request<{ paths: AttackPath[]; blast_radius: { affected_services: number; reachable_data_stores: number } }>("/api/graph/attack-paths?limit=10"),
   remediations: () => request<{ remediations: Remediation[] }>("/api/graph/remediations?limit=5"),
-  ask: (question: string) => request<QueryAnswer>("/api/llm/query", { method: "POST", body: JSON.stringify({ question }) }),
+  ask: (question: string, scope?: { service?: string; repo_url?: string }) =>
+    request<QueryAnswer>("/api/llm/query", {
+      method: "POST",
+      body: JSON.stringify({ question, ...(scope || {}) })
+    }),
   scanRepo: (repo_url: string) => request<{ scan_id: string; status: string }>("/api/scans/repo", { method: "POST", body: JSON.stringify({ repo_url }) }),
   scans: () => request<Scan[]>("/api/scans"),
   scanGraph: (scanId: string) => request<ScanGraph>(`/api/scans/${scanId}/graph`),

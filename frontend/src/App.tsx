@@ -50,6 +50,11 @@ export default function App() {
   const [scanGraphLinks, setScanGraphLinks] = useState<GraphLink[]>([]);
   const [scanGraphPaths, setScanGraphPaths] = useState<AttackPath[]>([]);
   const [scanGraphTitle, setScanGraphTitle] = useState("Repo Attack Graph");
+  // Repo URL of the most recently opened scan graph. Passed to the Ask Graph
+  // endpoint as a scope hint so questions like "which 3 patches give the biggest
+  // risk reduction?" can be answered against the currently displayed repo
+  // instead of falling back to the org-wide graph.
+  const [scopedRepoUrl, setScopedRepoUrl] = useState<string | null>(null);
   const [remediations, setRemediations] = useState<Remediation[]>([]);
   const [scans, setScans] = useState<Scan[]>([]);
   const [repoUrl, setRepoUrl] = useState("https://github.com/pallets/flask");
@@ -150,6 +155,7 @@ export default function App() {
       setScanGraphLinks(graph.links);
       setScanGraphPaths(graph.paths);
       setScanGraphTitle(`Repo Attack Graph: ${scan.repo_url.replace(/^https?:\/\/github.com\//, "")}`);
+      setScopedRepoUrl(scan.repo_url);
       setTab("scan-graph");
       showNotice("✓ Repo-specific attack graph loaded.", "success");
     } catch {
@@ -167,7 +173,8 @@ export default function App() {
     setQueryLoading(true);
     try {
       try {
-        const response = await api.ask(question);
+        const scope = scopedRepoUrl ? { repo_url: scopedRepoUrl } : undefined;
+        const response = await api.ask(question, scope);
         setAnswer(response.answer);
         showNotice("✓ Graph-grounded answer generated.", "success");
       } catch {

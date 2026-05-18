@@ -59,8 +59,13 @@ def _truncate_context(context: dict, max_size: int = MAX_CONTEXT_SIZE_BYTES) -> 
     return context
 
 
-def _service_filter(question: str) -> str | None:
-    """Return a known service name when the user scopes the question to it."""
+def _service_filter(question: str, hint: str | None = None) -> str | None:
+    """Return a known service name when the question (or caller hint) scopes to it.
+
+    ``hint`` is an optional service-name candidate supplied by the caller — used
+    when the frontend knows which scan the user is currently viewing but the
+    question text doesn't explicitly mention the service.
+    """
     lowered = question.lower()
     try:
         rows = graph.execute("MATCH (s:Service) RETURN s.name AS name LIMIT 200")
@@ -74,13 +79,24 @@ def _service_filter(question: str) -> str | None:
     for service_name in service_names:
         if service_name.lower() in lowered:
             return service_name
+    if hint:
+        hint_lower = hint.lower()
+        for service_name in service_names:
+            sn_lower = service_name.lower()
+            if sn_lower == hint_lower or sn_lower in hint_lower or hint_lower in sn_lower:
+                return service_name
     return None
 
 
-def graph_context(question: str) -> dict:
+def graph_context(question: str, service_hint: str | None = None) -> dict:
     lowered = question.lower()
-    service_name = _service_filter(question)
-    raw_paths = graph.attack_paths(limit=10, service_name=service_name)
+    service_name = _service_filter(question, hint=service_hint)
+    # When the query is scoped to a single service the candidate path set is
+    # already narrow, so we pull a wider slice (50) to ensure every vulnerable
+    # package attached to that service reaches the LLM. The unscoped/org-wide
+    # case keeps the original tighter limit so we don't blow the prompt budget.
+    path_limit = 50 if service_name else 10
+    raw_paths = graph.attack_paths(limit=path_limit, service_name=service_name)
     context = {"attack_paths": raw_paths}
     if service_name:
         context["service_filter"] = service_name
@@ -115,8 +131,8 @@ def deterministic_answer(question: str, context: dict) -> str:
     )
 
 
-async def answer_question(question: str) -> dict:
-    context = graph_context(question)
+async def answer_question(question: str, service_hint: str | None = None) -> dict:
+    context = graph_context(question, service_hint=service_hint)
     if not settings.groq_api_key:
         answer = deterministic_answer(question, context)
         return {"answer": answer, "context": context, "validation": validate_answer(answer, context), "model": "deterministic-local"}
