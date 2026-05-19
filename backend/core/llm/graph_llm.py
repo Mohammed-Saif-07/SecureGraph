@@ -102,18 +102,25 @@ def graph_context(question: str, service_hint: str | None = None) -> dict:
         context["service_filter"] = service_name
 
     if "patch" in lowered or "fix" in lowered or "remediation" in lowered:
-        context["remediations"] = ranked_remediations(limit=5)
+        # Scope remediations to the same service when the query is service-scoped
+        # so the deterministic fallback doesn't recommend patches that belong to
+        # a completely different repo than the one the user is asking about.
+        context["remediations"] = ranked_remediations(limit=5, service_name=service_name)
     if "graph" in lowered or "show" in lowered:
         context["snapshot"] = graph.graph_snapshot()
     return _truncate_context(context)
 
 
 def deterministic_answer(question: str, context: dict) -> str:
-    remediations = context.get("remediations") or ranked_remediations(limit=3)
+    service_filter = context.get("service_filter")
+    remediations = context.get("remediations") or ranked_remediations(
+        limit=3, service_name=service_filter
+    )
     if "patch" in question.lower() or "fix" in question.lower():
         if not remediations:
             return "The graph does not contain enough vulnerable package evidence to recommend patches yet."
-        lines = ["Based on the graph, patch these packages first:"]
+        scope_phrase = f" in {service_filter}" if service_filter else ""
+        lines = [f"Based on the graph, patch these packages first{scope_phrase}:"]
         for idx, item in enumerate(remediations[:3], start=1):
             lines.append(
                 f"{idx}. Update {item['package_name']} from {item['current_version']} to {item['fixed_version']} "
@@ -123,12 +130,20 @@ def deterministic_answer(question: str, context: dict) -> str:
     paths = context.get("attack_paths", [])
     if not paths:
         return "The graph does not contain attack paths to business data yet."
-    top = paths[0]
-    return (
-        f"The biggest attack path is {top['cve_id']} through {top['package_name']} into "
-        f"{top['service_name']}, reaching {top['data_name']} in {top['hops']} hops. "
-        f"The graph risk score is {top['risk_score']}/10."
-    )
+    # When the LLM either wasn't called or produced an ungrounded answer, we
+    # surface the strongest evidence the graph actually contains so the user
+    # still gets something useful — not just the single highest-risk path.
+    scope_phrase = f" for {service_filter}" if service_filter else ""
+    lines = [
+        f"Here are the strongest attack paths grounded in the graph{scope_phrase}:"
+    ]
+    for idx, path in enumerate(paths[:3], start=1):
+        lines.append(
+            f"{idx}. {path['cve_id']} affects {path['package_name']}, used by "
+            f"{path['service_name']} ({path['hops']} hops to {path['data_name']}). "
+            f"Risk score: {path['risk_score']}/10."
+        )
+    return "\n".join(lines)
 
 
 async def answer_question(question: str, service_hint: str | None = None) -> dict:

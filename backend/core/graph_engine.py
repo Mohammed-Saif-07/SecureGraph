@@ -234,10 +234,21 @@ class GraphEngine:
         snapshot["links"] = [link for link in snapshot["links"] if link.get("target")]
         return snapshot
 
-    def top_remediations(self, limit: int = 3) -> list[dict[str, Any]]:
+    def top_remediations(
+        self, limit: int = 3, service_name: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Return ranked remediation candidates.
+
+        When ``service_name`` is provided, the result is restricted to packages
+        whose vulnerabilities reach the named service. Without a filter the
+        ranking is computed across every service in the graph (the original,
+        org-wide behaviour used by the public ``/api/graph/remediations``
+        endpoint and the PDF report).
+        """
         return self.execute(
             """
             MATCH (cve:CVE)-[:AFFECTS]->(pkg:Package)-[:USED_BY]->(svc:Service)
+            WHERE $service_name IS NULL OR svc.name = $service_name
             WITH pkg, collect(DISTINCT cve.id) AS cves, collect(DISTINCT svc.name) AS services,
                  sum(coalesce(cve.real_risk_score, cve.predicted_exploit_probability, cve.epss_score, cve.cvss_score / 10.0, 0.0)) AS risk
             RETURN pkg.name AS package_name,
@@ -251,6 +262,7 @@ class GraphEngine:
             LIMIT $limit
             """,
             limit=limit,
+            service_name=service_name,
         )
 
     def seed_demo_graph(self) -> None:
