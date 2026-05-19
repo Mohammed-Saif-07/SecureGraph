@@ -155,6 +155,14 @@ export default function App() {
 
       const latestScan = latestCompletedFindingScan(scanRows);
       if (latestScan) {
+        // Bind the Query page's scope to whatever the Dashboard is currently
+        // displaying. Without this, Query would only become repo-scoped after
+        // the user explicitly clicked "View Graph" on a scan, leaving demo
+        // baseline data (PaymentService / PaymentDatabase) to leak into Ask
+        // Graph answers even though the Dashboard had already switched away
+        // from that baseline. Explicit View Graph clicks still override this
+        // because openScanGraph runs setScopedRepoUrl after refresh.
+        setScopedRepoUrl(latestScan.repo_url);
         try {
           const latestGraph = await api.scanGraph(latestScan.id);
           const latestPaths = sortedPaths(latestGraph.paths);
@@ -185,6 +193,10 @@ export default function App() {
           });
         }
       } else {
+        // No completed scans yet — keep Dashboard on the demo baseline and
+        // clear any stale Query scope so we don't try to filter on a repo the
+        // backend can't match.
+        setScopedRepoUrl(null);
         setDashboardPaths(baselinePaths);
         setDashboardRemediations(remediationRows.remediations);
         setDashboardSource({

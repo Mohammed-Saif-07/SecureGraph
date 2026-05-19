@@ -62,11 +62,14 @@ def _truncate_context(context: dict, max_size: int = MAX_CONTEXT_SIZE_BYTES) -> 
 def _service_filter(question: str, hint: str | None = None) -> str | None:
     """Return a known service name when the question (or caller hint) scopes to it.
 
-    ``hint`` is an optional service-name candidate supplied by the caller — used
-    when the frontend knows which scan the user is currently viewing but the
-    question text doesn't explicitly mention the service.
+    Priority order (explicit caller intent wins):
+      1. ``hint`` — if the frontend told us which scan the user is viewing,
+         that scope wins. This prevents demo-baseline services (PaymentService,
+         PaymentDatabase) from leaking into answers when the user is actually
+         asking about a freshly scanned repo.
+      2. Question text — only used as a fallback when no hint is supplied,
+         e.g. when the user navigates to Query without ever opening a scan.
     """
-    lowered = question.lower()
     try:
         rows = graph.execute("MATCH (s:Service) RETURN s.name AS name LIMIT 200")
     except Exception:
@@ -76,15 +79,18 @@ def _service_filter(question: str, hint: str | None = None) -> str | None:
         key=len,
         reverse=True,
     )
-    for service_name in service_names:
-        if service_name.lower() in lowered:
-            return service_name
+    # 1. Honour the explicit hint first.
     if hint:
         hint_lower = hint.lower()
         for service_name in service_names:
             sn_lower = service_name.lower()
             if sn_lower == hint_lower or sn_lower in hint_lower or hint_lower in sn_lower:
                 return service_name
+    # 2. Fallback to question-text matching only when no hint resolved.
+    lowered = question.lower()
+    for service_name in service_names:
+        if service_name.lower() in lowered:
+            return service_name
     return None
 
 
