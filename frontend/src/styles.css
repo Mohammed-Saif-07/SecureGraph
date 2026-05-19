@@ -122,6 +122,81 @@ header p, .muted {
   gap: 18px;
 }
 
+.dashboardSource {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid #d6e0ea;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #263449;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
+}
+
+.dashboardSource strong {
+  font-size: 14px;
+}
+
+.dashboardSource span {
+  color: #64748b;
+  font-weight: 700;
+  text-align: right;
+}
+
+.dashboardSource.latest-scan {
+  border-color: #99f6e4;
+  background: #ecfdf5;
+  color: #0f766e;
+}
+
+.dashboardSource.baseline {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.dashboardSource.demo {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.panelHeader h2 {
+  margin: 0;
+}
+
+.sourcePill {
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 800;
+  background: #e2e8f0;
+  color: #334155;
+  white-space: nowrap;
+}
+
+.sourcePill.latest-scan {
+  background: #ccfbf1;
+  color: #0f766e;
+}
+
+.sourcePill.baseline,
+.sourcePill.demo {
+  background: #ffedd5;
+  color: #9a3412;
+}
+
 .panel, .riskGauge, .graphStage, .query, .scans, .reports {
   background: #ffffff;
   border: 1px solid #dbe3ef;
@@ -522,4 +597,15 @@ button.primary:disabled:hover {
 
 .scan-row.scan-success strong {
   color: #065f46;
+}
+
+@media (max-width: 720px) {
+  .dashboardSource {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .dashboardSource span {
+    text-align: left;
+  }
 }

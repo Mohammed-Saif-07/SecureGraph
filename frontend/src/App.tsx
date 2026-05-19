@@ -12,6 +12,12 @@ import "./styles.css";
 type Tab = "dashboard" | "graph" | "scan-graph" | "query" | "scans" | "reports" | "auth";
 type NoticeType = "info" | "success" | "error";
 
+type DashboardSource = {
+  mode: "latest-scan" | "baseline" | "demo";
+  title: string;
+  detail: string;
+};
+
 const demoNodes: GraphNode[] = [
   { id: "1", label: "CVE", name: "CVE-2023-32681", severity: "critical", risk: 0.92 },
   { id: "2", label: "Package", name: "requests", risk: 0.88 },
@@ -41,6 +47,58 @@ const demoRemediations: Remediation[] = [
   { package_name: "aiohttp", current_version: "3.8.1", fixed_version: "3.9.0", cves: ["CVE-2023-44487"], services: ["PaymentService"], risk_reduction: 8.8 }
 ];
 
+
+function repoDisplayName(repoUrl: string) {
+  return repoUrl.replace(/^https?:\/\/github.com\//, "").replace(/\/$/, "") || repoUrl;
+}
+
+function scanTime(scan: Scan) {
+  return Date.parse(scan.completed_at || scan.started_at || "") || 0;
+}
+
+function latestCompletedFindingScan(scanRows: Scan[]) {
+  return [...scanRows]
+    .filter((scan) => scan.results > 0 && scan.status.includes("completed"))
+    .sort((a, b) => scanTime(b) - scanTime(a))[0];
+}
+
+function sortedPaths(rows: AttackPath[]) {
+  return [...rows].sort((a, b) => (b.risk_score || 0) - (a.risk_score || 0));
+}
+
+function remediationFromPaths(pathRows: AttackPath[]): Remediation[] {
+  const groups = new Map<string, Remediation>();
+  const countedRisk = new Set<string>();
+
+  for (const path of pathRows) {
+    const packageName = path.package_name || "unknown";
+    const current: Remediation = groups.get(packageName) ?? {
+      package_name: packageName,
+      current_version: "detected",
+      fixed_version: "latest safe release",
+      services: [],
+      cves: [],
+      risk_reduction: 0,
+    };
+
+    if (path.cve_id && !current.cves.includes(path.cve_id)) current.cves.push(path.cve_id);
+    if (path.service_name && !current.services.includes(path.service_name)) current.services.push(path.service_name);
+
+    const riskKey = [packageName, path.cve_id, path.service_name, path.data_name].join(":");
+    if (!countedRisk.has(riskKey)) {
+      current.risk_reduction += path.risk_score || 0;
+      countedRisk.add(riskKey);
+    }
+
+    groups.set(packageName, current);
+  }
+
+  return [...groups.values()]
+    .map((item) => ({ ...item, risk_reduction: Number(item.risk_reduction.toFixed(2)) }))
+    .sort((a, b) => b.risk_reduction - a.risk_reduction)
+    .slice(0, 5);
+}
+
 export default function App() {
   const [tab, setTab] = useState<Tab>("dashboard");
   const [nodes, setNodes] = useState<GraphNode[]>([]);
@@ -55,7 +113,14 @@ export default function App() {
   // risk reduction?" can be answered against the currently displayed repo
   // instead of falling back to the org-wide graph.
   const [scopedRepoUrl, setScopedRepoUrl] = useState<string | null>(null);
-  const [remediations, setRemediations] = useState<Remediation[]>([]);
+  const [, setRemediations] = useState<Remediation[]>([]);
+  const [dashboardPaths, setDashboardPaths] = useState<AttackPath[]>([]);
+  const [dashboardRemediations, setDashboardRemediations] = useState<Remediation[]>([]);
+  const [dashboardSource, setDashboardSource] = useState<DashboardSource>({
+    mode: "demo",
+    title: "Demo baseline",
+    detail: "Live scans have not loaded yet.",
+  });
   const [scans, setScans] = useState<Scan[]>([]);
   const [repoUrl, setRepoUrl] = useState("https://github.com/pallets/flask");
   const [question, setQuestion] = useState("Which 3 patches give me the biggest risk reduction?");
@@ -78,25 +143,72 @@ export default function App() {
         api.snapshot(),
         api.attackPaths(),
         api.remediations(),
-        api.scans()
+        api.scans(),
       ]);
+
+      const baselinePaths = sortedPaths(attackPaths.paths);
       setNodes(snapshot.nodes);
       setLinks(snapshot.links);
-      setPaths(attackPaths.paths);
+      setPaths(baselinePaths);
       setRemediations(remediationRows.remediations);
       setScans(scanRows);
-      if (!options.silent) {
-        showNotice("Live SecureGraph API connected.", "success");
+
+      const latestScan = latestCompletedFindingScan(scanRows);
+      if (latestScan) {
+        try {
+          const latestGraph = await api.scanGraph(latestScan.id);
+          const latestPaths = sortedPaths(latestGraph.paths);
+          if (latestPaths.length > 0) {
+            setDashboardPaths(latestPaths);
+            setDashboardRemediations(remediationFromPaths(latestPaths));
+            setDashboardSource({
+              mode: "latest-scan",
+              title: "Latest scanned repo",
+              detail: repoDisplayName(latestScan.repo_url),
+            });
+          } else {
+            setDashboardPaths(baselinePaths);
+            setDashboardRemediations(remediationRows.remediations);
+            setDashboardSource({
+              mode: "baseline",
+              title: "Demo baseline + latest scan",
+              detail: `${repoDisplayName(latestScan.repo_url)} has no repo attack paths yet.`,
+            });
+          }
+        } catch {
+          setDashboardPaths(baselinePaths);
+          setDashboardRemediations(remediationRows.remediations);
+          setDashboardSource({
+            mode: "baseline",
+            title: "Demo baseline + latest scan",
+            detail: `${repoDisplayName(latestScan.repo_url)} scan exists, but its graph could not be loaded.`,
+          });
+        }
+      } else {
+        setDashboardPaths(baselinePaths);
+        setDashboardRemediations(remediationRows.remediations);
+        setDashboardSource({
+          mode: "baseline",
+          title: "Demo baseline",
+          detail: "Scan a repo with findings to switch this dashboard to latest scan mode.",
+        });
       }
+
+      if (!options.silent) showNotice("Live SecureGraph API connected.", "success");
     } catch {
       setNodes(demoNodes);
       setLinks(demoLinks);
       setPaths(demoPaths);
       setRemediations(demoRemediations);
+      setDashboardPaths(demoPaths);
+      setDashboardRemediations(demoRemediations);
+      setDashboardSource({
+        mode: "demo",
+        title: "Demo baseline",
+        detail: "Backend unavailable, so these cards show bundled demo data.",
+      });
       setScans([]);
-      if (!options.silent) {
-        showNotice("Using demo graph. Start Docker Compose for live scans and reports.", "info");
-      }
+      if (!options.silent) showNotice("Backend unavailable. Showing bundled demo data.", "info");
     }
   }
 
@@ -122,9 +234,9 @@ export default function App() {
   }, [scans, tab]);
 
   const overallRisk = useMemo(() => {
-    const top = paths[0]?.risk_score || 0;
+    const top = dashboardPaths[0]?.risk_score || 0;
     return Math.min(100, Math.round(top * 10));
-  }, [paths]);
+  }, [dashboardPaths]);
 
   async function submitScan() {
     if (!repoUrl.trim()) {
@@ -151,11 +263,19 @@ export default function App() {
     setLoading(true);
     try {
       const graph = await api.scanGraph(scan.id);
+      const graphPaths = sortedPaths(graph.paths);
       setScanGraphNodes(graph.nodes);
       setScanGraphLinks(graph.links);
-      setScanGraphPaths(graph.paths);
-      setScanGraphTitle(`Repo Attack Graph: ${scan.repo_url.replace(/^https?:\/\/github.com\//, "")}`);
+      setScanGraphPaths(graphPaths);
+      setScanGraphTitle(`Repo Attack Graph: ${repoDisplayName(scan.repo_url)}`);
       setScopedRepoUrl(scan.repo_url);
+      setDashboardPaths(graphPaths);
+      setDashboardRemediations(remediationFromPaths(graphPaths));
+      setDashboardSource({
+        mode: "latest-scan",
+        title: "Selected scanned repo",
+        detail: repoDisplayName(scan.repo_url),
+      });
       setTab("scan-graph");
       showNotice("✓ Repo-specific attack graph loaded.", "success");
     } catch {
@@ -224,32 +344,55 @@ export default function App() {
 
         {tab === "dashboard" && (
           <section className="dashboard">
-            <RiskGauge value={overallRisk} />
+            <div className={`dashboardSource ${dashboardSource.mode}`}>
+              <strong>{dashboardSource.title}</strong>
+              <span>{dashboardSource.detail}</span>
+            </div>
+            <RiskGauge
+              value={overallRisk}
+              title={dashboardSource.mode === "latest-scan" ? "Latest Scan Risk" : "Organization Risk"}
+              caption={
+                dashboardSource.mode === "latest-scan"
+                  ? "Calculated from the latest repo-specific attack paths."
+                  : "Baseline view. Latest scan data appears here once a repo has findings."
+              }
+            />
             <div className="panel">
-              <h2>Highest Risk Paths</h2>
-              {paths.length > 0 ? (
-                <AttackPathList paths={paths.slice(0, 4)} />
+              <div className="panelHeader">
+                <h2>Highest Risk Paths</h2>
+                <span className={`sourcePill ${dashboardSource.mode}`}>
+                  {dashboardSource.mode === "latest-scan" ? "Latest scan" : "Baseline"}
+                </span>
+              </div>
+              {dashboardPaths.length > 0 ? (
+                <AttackPathList paths={dashboardPaths.slice(0, 4)} />
               ) : (
                 <div className="empty-state">
-                  <p><strong>No attack paths detected yet.</strong></p>
-                  <p>Scan a repository to discover vulnerabilities.</p>
+                  <strong>No attack paths yet.</strong>
+                  <span>Scan a repo with vulnerable dependencies to populate this card.</span>
                 </div>
               )}
             </div>
             <div className="panel">
-              <h2>Patch ROI</h2>
-              {remediations.length > 0 ? (
-                remediations.slice(0, 3).map((item) => <RemediationCard key={item.package_name} item={item} />)
+              <div className="panelHeader">
+                <h2>Patch ROI</h2>
+                <span className={`sourcePill ${dashboardSource.mode}`}>
+                  {dashboardSource.mode === "latest-scan" ? "Latest scan" : "Baseline"}
+                </span>
+              </div>
+              {dashboardRemediations.length > 0 ? (
+                dashboardRemediations
+                  .slice(0, 3)
+                  .map((item) => <RemediationCard key={`${item.package_name}-${item.risk_reduction}`} item={item} />)
               ) : (
                 <div className="empty-state">
-                  <p><strong>No remediations available.</strong></p>
-                  <p>Run a scan to see patch recommendations.</p>
+                  <strong>No remediation ROI yet.</strong>
+                  <span>Repo-specific patch ranking will appear after a successful scan.</span>
                 </div>
               )}
             </div>
           </section>
         )}
-
         {tab === "graph" && <GraphViewer nodes={nodes} links={links} paths={paths} />}
 
         {tab === "auth" && <AuthPage onAuthenticated={(nextUser) => {
