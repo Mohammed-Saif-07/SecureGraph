@@ -117,7 +117,20 @@ def graph_context(question: str, service_hint: str | None = None) -> dict:
     return _truncate_context(context)
 
 
-def deterministic_answer(question: str, context: dict) -> str:
+def deterministic_answer(
+    question: str,
+    context: dict,
+    unsupported_claims: list[str] | None = None,
+) -> str:
+    """Return a deterministic, graph-grounded answer.
+
+    ``unsupported_claims`` is supplied by ``answer_question`` when the
+    validator rejected the LLM's output because it referenced CVEs that aren't
+    in the graph. Surfacing those rejected IDs back to the user makes the
+    fallback honest about *why* it kicked in — otherwise users asking a trap
+    question ("does CVE-2099-77777 exist?") see a generic path list instead
+    of an explicit denial.
+    """
     service_filter = context.get("service_filter")
     remediations = context.get("remediations") or ranked_remediations(
         limit=3, service_name=service_filter
@@ -134,15 +147,29 @@ def deterministic_answer(question: str, context: dict) -> str:
             )
         return "\n".join(lines)
     paths = context.get("attack_paths", [])
-    if not paths:
+    if not paths and not unsupported_claims:
         return "The graph does not contain attack paths to business data yet."
     # When the LLM either wasn't called or produced an ungrounded answer, we
     # surface the strongest evidence the graph actually contains so the user
     # still gets something useful — not just the single highest-risk path.
     scope_phrase = f" for {service_filter}" if service_filter else ""
-    lines = [
-        f"Here are the strongest attack paths grounded in the graph{scope_phrase}:"
-    ]
+    lines: list[str] = []
+    if unsupported_claims:
+        claim_list = ", ".join(sorted(set(unsupported_claims)))
+        if paths:
+            lines.append(
+                f"I couldn't find {claim_list} in the graph context, so I can't confirm it exists or affects this service. "
+                f"Here are the strongest attack paths I do have evidence for{scope_phrase}:"
+            )
+        else:
+            return (
+                f"I couldn't find {claim_list} in the graph context, so I can't confirm it exists or affects this service. "
+                f"The graph also doesn't yet contain attack paths{scope_phrase} to compare against."
+            )
+    else:
+        lines.append(
+            f"Here are the strongest attack paths grounded in the graph{scope_phrase}:"
+        )
     for idx, path in enumerate(paths[:3], start=1):
         lines.append(
             f"{idx}. {path['cve_id']} affects {path['package_name']}, used by "
@@ -170,7 +197,12 @@ async def answer_question(question: str, service_hint: str | None = None) -> dic
         answer = response.json()["choices"][0]["message"]["content"]
         validation = validate_answer(answer, context)
         if not validation["valid"]:
-            answer = deterministic_answer(question, context)
+            # Pass the rejected CVE IDs into the fallback so the deterministic
+            # answer can explicitly tell the user "I couldn't find X" rather
+            # than silently swapping their question for a generic path list.
+            answer = deterministic_answer(
+                question, context, unsupported_claims=validation["unsupported_claims"]
+            )
             validation = validate_answer(answer, context)
         return {"answer": answer, "context": context, "validation": validation, "model": "llama-3.1-8b-instant"}
     except (httpx.HTTPStatusError, httpx.RequestError) as exc:
