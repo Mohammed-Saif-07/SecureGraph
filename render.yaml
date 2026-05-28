@@ -33,8 +33,8 @@ services:
       - key: AUTO_IMPORT_NVD
         value: "true"
       - key: NVD_IMPORT_MONTHS
-        value: "1"
+        value: "24"
       - key: NVD_IMPORT_MAX_PAGES
-        value: "1"
+        value: "25"
       - key: NVD_IMPORT_MIN_CVES
         value: "1000"
