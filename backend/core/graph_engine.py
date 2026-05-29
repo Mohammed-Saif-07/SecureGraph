@@ -127,6 +127,41 @@ class GraphEngine:
             )
         return len(updates)
 
+    def cve_summary(self, sample_limit: int = 10, service_name: str | None = None) -> dict[str, Any]:
+        """Return total CVE counts without applying attack-path display limits."""
+        count_rows = self.execute(
+            """
+            MATCH (c:CVE)
+            WHERE $service_name IS NULL OR EXISTS {
+              MATCH (c)-[:AFFECTS]->(:Package)-[:USED_BY]->(:Service {name: $service_name})
+            }
+            RETURN count(c) AS total
+            """,
+            service_name=service_name,
+        )
+        sample_rows = self.execute(
+            """
+            MATCH (c:CVE)
+            WHERE $service_name IS NULL OR EXISTS {
+              MATCH (c)-[:AFFECTS]->(:Package)-[:USED_BY]->(:Service {name: $service_name})
+            }
+            RETURN c.id AS id,
+                   c.severity AS severity,
+                   c.cvss_score AS cvss_score,
+                   c.published_date AS published_date
+            ORDER BY coalesce(c.published_date, "") DESC, c.id DESC
+            LIMIT $sample_limit
+            """,
+            sample_limit=sample_limit,
+            service_name=service_name,
+        )
+        sample = [dict(row) for row in sample_rows]
+        return {
+            "total": int(count_rows[0].get("total") or 0) if count_rows else 0,
+            "sample": sample,
+            "sample_size": len(sample),
+        }
+
     def create_service_context(
         self,
         service_name: str,

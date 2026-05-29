@@ -15,6 +15,11 @@ def snapshot():
     return graph.graph_snapshot()
 
 
+@router.get("/cves/summary")
+def cve_summary(sample_limit: int = 10):
+    return graph.cve_summary(sample_limit=sample_limit)
+
+
 @router.get("/attack-paths")
 def attack_paths(limit: int = 10):
     paths = find_attack_paths(limit=limit)

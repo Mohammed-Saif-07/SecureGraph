@@ -12,6 +12,9 @@ GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 # Maximum context size in bytes to stay under Groq API limit.
 MAX_CONTEXT_SIZE_BYTES = 10000
 
+COUNT_TERMS = ("how many", "count", "total", "kitne", "kitni", "ginti")
+CVE_TERMS = ("cve", "cves", "vulnerability", "vulnerabilities")
+
 
 def _json_size(value: object) -> int:
     """Return serialized JSON size in bytes."""
@@ -94,9 +97,21 @@ def _service_filter(question: str, hint: str | None = None) -> str | None:
     return None
 
 
+def _is_cve_count_question(question: str) -> bool:
+    lowered = question.lower()
+    return any(term in lowered for term in CVE_TERMS) and any(term in lowered for term in COUNT_TERMS)
+
+
 def graph_context(question: str, service_hint: str | None = None) -> dict:
     lowered = question.lower()
     service_name = _service_filter(question, hint=service_hint)
+    if _is_cve_count_question(question):
+        summary = graph.cve_summary(sample_limit=10, service_name=service_name)
+        context = {"cve_summary": summary}
+        if service_name:
+            context["service_filter"] = service_name
+        return context
+
     # When the query is scoped to a single service the candidate path set is
     # already narrow, so we pull a wider slice (50) to ensure every vulnerable
     # package attached to that service reaches the LLM. The unscoped/org-wide
@@ -132,6 +147,17 @@ def deterministic_answer(
     of an explicit denial.
     """
     service_filter = context.get("service_filter")
+    cve_summary = context.get("cve_summary")
+    if cve_summary:
+        total = int(cve_summary.get("total") or 0)
+        sample = cve_summary.get("sample") or []
+        scope_phrase = f" for {service_filter}" if service_filter else ""
+        lines = [f"Neo4j currently contains {total:,} CVE node(s){scope_phrase}."]
+        if sample:
+            ids = ", ".join(item.get("id", "") for item in sample if item.get("id"))
+            lines.append(f"Showing {len(sample)} sample CVEs only: {ids}.")
+        return "\n".join(lines)
+
     remediations = context.get("remediations") or ranked_remediations(
         limit=3, service_name=service_filter
     )
