@@ -282,6 +282,29 @@ header p, .muted {
   font-size: 22px;
 }
 
+.inventoryStats {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 14px;
+  align-items: baseline;
+}
+
+.inventoryStats strong {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.inventoryStats span,
+.inventoryStats p {
+  color: #64748b;
+}
+
+.inventoryStats p {
+  grid-column: 1 / -1;
+  margin: 10px 0 0;
+  line-height: 1.5;
+}
+
 .graphStage {
   height: calc(100vh - 128px);
   padding: 0;

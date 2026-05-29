@@ -11,8 +11,8 @@ router = APIRouter()
 
 
 @router.get("/snapshot")
-def snapshot():
-    return graph.graph_snapshot()
+def snapshot(limit: int = 500):
+    return graph.graph_snapshot(limit=limit)
 
 
 @router.get("/cves/summary")

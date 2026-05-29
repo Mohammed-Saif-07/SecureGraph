@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Activity, Download, GitBranch, LogOut, MessageSquare, Radar, ShieldAlert, UserRound } from "lucide-react";
-import { api, AttackPath, GraphLink, GraphNode, Remediation, Scan, User } from "./api/client";
+import { api, AttackPath, CveSummary, GraphLink, GraphNode, Remediation, Scan, User } from "./api/client";
 import { GraphViewer } from "./components/GraphViewer";
 import { RiskGauge } from "./components/RiskGauge";
 import { AttackPathList } from "./components/AttackPath";
@@ -47,6 +47,7 @@ const demoRemediations: Remediation[] = [
   { package_name: "aiohttp", current_version: "3.8.1", fixed_version: "3.9.0", cves: ["CVE-2023-44487"], services: ["PaymentService"], risk_reduction: 8.8 }
 ];
 
+const emptyCveSummary: CveSummary = { total: 0, package_links: 0, sample_size: 0, sample: [] };
 
 function repoDisplayName(repoUrl: string) {
   return repoUrl.replace(/^https?:\/\/github.com\//, "").replace(/\/$/, "") || repoUrl;
@@ -116,6 +117,7 @@ export default function App() {
   const [, setRemediations] = useState<Remediation[]>([]);
   const [dashboardPaths, setDashboardPaths] = useState<AttackPath[]>([]);
   const [dashboardRemediations, setDashboardRemediations] = useState<Remediation[]>([]);
+  const [cveSummary, setCveSummary] = useState<CveSummary>(emptyCveSummary);
   const [dashboardSource, setDashboardSource] = useState<DashboardSource>({
     mode: "demo",
     title: "Demo baseline",
@@ -139,8 +141,9 @@ export default function App() {
 
   async function refresh(options: { silent?: boolean } = {}) {
     try {
-      const [snapshot, attackPaths, remediationRows, scanRows] = await Promise.all([
+      const [snapshot, cveRows, attackPaths, remediationRows, scanRows] = await Promise.all([
         api.snapshot(),
+        api.cveSummary(),
         api.attackPaths(),
         api.remediations(),
         api.scans(),
@@ -151,6 +154,7 @@ export default function App() {
       setLinks(snapshot.links);
       setPaths(baselinePaths);
       setRemediations(remediationRows.remediations);
+      setCveSummary(cveRows);
       setScans(scanRows);
 
       const latestScan = latestCompletedFindingScan(scanRows);
@@ -201,8 +205,8 @@ export default function App() {
         setDashboardRemediations(remediationRows.remediations);
         setDashboardSource({
           mode: "baseline",
-          title: "Demo baseline",
-          detail: "Scan a repo with findings to switch this dashboard to latest scan mode.",
+          title: "Live CVE intelligence",
+          detail: `${cveRows.total.toLocaleString()} CVEs imported from NVD. Scan a repo to create service-level attack paths.`,
         });
       }
 
@@ -214,6 +218,7 @@ export default function App() {
       setRemediations(demoRemediations);
       setDashboardPaths(demoPaths);
       setDashboardRemediations(demoRemediations);
+      setCveSummary(emptyCveSummary);
       setDashboardSource({
         mode: "demo",
         title: "Demo baseline",
@@ -381,13 +386,17 @@ export default function App() {
               ) : (
                 <div className="empty-state">
                   <strong>No attack paths yet.</strong>
-                  <span>Scan a repo with vulnerable dependencies to populate this card.</span>
+                  <span>
+                    {cveSummary.total > 0
+                      ? `${cveSummary.total.toLocaleString()} CVEs and ${cveSummary.package_links.toLocaleString()} package links are imported. Scan a repo to connect them to services and business data.`
+                      : "Scan a repo with vulnerable dependencies to populate this card."}
+                  </span>
                 </div>
               )}
             </div>
             <div className="panel">
               <div className="panelHeader">
-                <h2>Patch ROI</h2>
+                <h2>{dashboardRemediations.length > 0 ? "Patch ROI" : "Imported CVEs"}</h2>
                 <span className={`sourcePill ${dashboardSource.mode}`}>
                   {dashboardSource.mode === "latest-scan" ? "Latest scan" : "Baseline"}
                 </span>
@@ -397,10 +406,22 @@ export default function App() {
                   .slice(0, 3)
                   .map((item) => <RemediationCard key={`${item.package_name}-${item.risk_reduction}`} item={item} />)
               ) : (
-                <div className="empty-state">
-                  <strong>No remediation ROI yet.</strong>
-                  <span>Repo-specific patch ranking will appear after a successful scan.</span>
-                </div>
+                cveSummary.total > 0 ? (
+                  <div className="inventoryStats">
+                    <strong>{cveSummary.total.toLocaleString()}</strong>
+                    <span>Imported CVE nodes</span>
+                    <strong>{cveSummary.package_links.toLocaleString()}</strong>
+                    <span>CVE to package links</span>
+                    {cveSummary.sample.length > 0 && (
+                      <p>{cveSummary.sample.map((item) => item.id).join(", ")}</p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="empty-state">
+                    <strong>No remediation ROI yet.</strong>
+                    <span>Repo-specific patch ranking will appear after a successful scan.</span>
+                  </div>
+                )
               )}
             </div>
           </section>

@@ -34,6 +34,7 @@ export const api = {
   me: () => request<{ user: User }>("/api/auth/me"),
   logout: () => request<{ status: string }>("/api/auth/logout", { method: "POST" }),
   snapshot: () => request<{ nodes: GraphNode[]; links: GraphLink[] }>("/api/graph/snapshot"),
+  cveSummary: () => request<CveSummary>("/api/graph/cves/summary?sample_limit=5"),
   attackPaths: () => request<{ paths: AttackPath[]; blast_radius: { affected_services: number; reachable_data_stores: number } }>("/api/graph/attack-paths?limit=10"),
   remediations: () => request<{ remediations: Remediation[] }>("/api/graph/remediations?limit=5"),
   ask: (question: string, scope?: { service?: string; repo_url?: string }) =>
@@ -49,6 +50,7 @@ export const api = {
 
 export type GraphNode = { id: string; label: string; name: string; severity?: string; risk?: number };
 export type GraphLink = { source: string; target: string; type: string };
+export type CveSummary = { total: number; package_links: number; sample_size: number; sample: { id: string; severity?: string; cvss_score?: number; published_date?: string }[] };
 export type AttackPath = { cve_id: string; package_name: string; service_name: string; data_name: string; risk_score: number; hops: number };
 export type Remediation = { package_name: string; current_version: string; fixed_version: string; services: string[]; cves: string[]; risk_reduction: number };
 export type QueryAnswer = { answer: string; validation: { valid: boolean; unsupported_claims: string[] }; model: string };

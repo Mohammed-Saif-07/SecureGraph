@@ -139,6 +139,12 @@ class GraphEngine:
             """,
             service_name=service_name,
         )
+        link_rows = self.execute(
+            """
+            MATCH (:CVE)-[r:AFFECTS]->(:Package)
+            RETURN count(r) AS package_links
+            """
+        )
         sample_rows = self.execute(
             """
             MATCH (c:CVE)
@@ -158,6 +164,7 @@ class GraphEngine:
         sample = [dict(row) for row in sample_rows]
         return {
             "total": int(count_rows[0].get("total") or 0) if count_rows else 0,
+            "package_links": int(link_rows[0].get("package_links") or 0) if link_rows else 0,
             "sample": sample,
             "sample_size": len(sample),
         }
@@ -246,10 +253,20 @@ class GraphEngine:
             service_name=service_name,
         )
 
-    def graph_snapshot(self) -> dict[str, Any]:
+    def graph_snapshot(self, limit: int = 500) -> dict[str, Any]:
         rows = self.execute(
             """
             MATCH (n)
+            WITH n
+            ORDER BY CASE head(labels(n))
+              WHEN "Service" THEN 0
+              WHEN "BusinessData" THEN 1
+              WHEN "Server" THEN 2
+              WHEN "Package" THEN 3
+              WHEN "CVE" THEN 4
+              ELSE 5
+            END, coalesce(n.real_risk_score, n.predicted_exploit_probability, n.epss_score, n.cvss_score / 10.0, 0.0) DESC
+            LIMIT $limit
             OPTIONAL MATCH (n)-[r]->(m)
             RETURN collect(DISTINCT {
               id: elementId(n),
@@ -263,7 +280,8 @@ class GraphEngine:
               target: elementId(m),
               type: type(r)
             }) AS links
-            """
+            """,
+            limit=limit,
         )
         snapshot = rows[0] if rows else {"nodes": [], "links": []}
         snapshot["links"] = [link for link in snapshot["links"] if link.get("target")]
