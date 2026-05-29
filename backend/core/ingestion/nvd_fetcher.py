@@ -11,6 +11,7 @@ from core.config import settings
 from core.graph_engine import graph
 
 NVD_API_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+NVD_MAX_DATE_RANGE_DAYS = 120
 
 
 def _cvss_metrics(cve: dict) -> tuple[float, str, str, str]:
@@ -117,29 +118,36 @@ async def iter_recent_cves(months: int = 24, results_per_page: int = 2000, max_p
     start = end - timedelta(days=months * 30)
     headers = {"apiKey": settings.nvd_api_key} if settings.nvd_api_key else {}
     delay = 0.7 if settings.nvd_api_key else 6.2
-    start_index = 0
     page = 0
     async with httpx.AsyncClient(timeout=90) as client:
-        while True:
-            response = await client.get(
-                NVD_API_URL,
-                headers=headers,
-                params={
-                    "pubStartDate": start.strftime("%Y-%m-%dT%H:%M:%S.000"),
-                    "pubEndDate": end.strftime("%Y-%m-%dT%H:%M:%S.000"),
-                    "resultsPerPage": results_per_page,
-                    "startIndex": start_index,
-                },
-            )
-            response.raise_for_status()
-            payload = response.json()
-            for item in payload.get("vulnerabilities", []):
-                yield normalize_nvd_cve(item)
-            total = int(payload.get("totalResults", 0))
-            start_index += results_per_page
-            page += 1
-            if start_index >= total or (max_pages is not None and page >= max_pages):
+        window_start = start
+        while window_start < end:
+            window_end = min(window_start + timedelta(days=NVD_MAX_DATE_RANGE_DAYS), end)
+            start_index = 0
+            while True:
+                response = await client.get(
+                    NVD_API_URL,
+                    headers=headers,
+                    params={
+                        "pubStartDate": window_start.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                        "pubEndDate": window_end.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                        "resultsPerPage": results_per_page,
+                        "startIndex": start_index,
+                    },
+                )
+                response.raise_for_status()
+                payload = response.json()
+                for item in payload.get("vulnerabilities", []):
+                    yield normalize_nvd_cve(item)
+                total = int(payload.get("totalResults", 0))
+                start_index += results_per_page
+                page += 1
+                if start_index >= total or (max_pages is not None and page >= max_pages):
+                    break
+                await asyncio.sleep(delay)
+            if max_pages is not None and page >= max_pages:
                 break
+            window_start = window_end + timedelta(seconds=1)
             await asyncio.sleep(delay)
 
 
