@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     nvd_import_months: int = 24
     nvd_import_max_pages: int = 25
     nvd_import_min_cves: int = 1000
+    import_admin_token: str = ""
     cors_origins_raw: str = Field(default="http://localhost:5173", validation_alias="CORS_ORIGINS")
 
     @cached_property

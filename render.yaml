@@ -22,6 +22,8 @@ services:
         sync: false
       - key: NVD_API_KEY
         sync: false
+      - key: IMPORT_ADMIN_TOKEN
+        sync: false
       - key: JWT_SECRET
         sync: false
       - key: CORS_ORIGINS

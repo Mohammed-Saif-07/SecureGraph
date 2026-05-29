@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from api.middleware import RateLimitAndAuthMiddleware
-from api.routes import auth, graph, llm, reports, scans
+from api.routes import admin, auth, graph, llm, reports, scans
 from core.config import settings
 from core.graph_engine import graph as graph_engine
 from core.ingestion.nvd_fetcher import import_recent_cves
@@ -71,6 +71,7 @@ app.include_router(scans.router, prefix="/api/scans", tags=["scans"])
 app.include_router(graph.router, prefix="/api/graph", tags=["graph"])
 app.include_router(llm.router, prefix="/api/llm", tags=["llm"])
 app.include_router(reports.router, prefix="/api/reports", tags=["reports"])
+app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 
 @app.get("/health")
 def health():
