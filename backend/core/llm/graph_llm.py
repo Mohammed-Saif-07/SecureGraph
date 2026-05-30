@@ -104,13 +104,19 @@ def _is_cve_count_question(question: str) -> bool:
 
 def graph_context(question: str, service_hint: str | None = None) -> dict:
     lowered = question.lower()
-    service_name = _service_filter(question, hint=service_hint)
     if _is_cve_count_question(question):
+        # Count questions should answer the graph inventory by default. The
+        # frontend may pass the last viewed repo as a hint, but that should not
+        # turn "How many CVEs are in Neo4j?" into a repo-scoped question unless
+        # the service is explicitly named in the question text.
+        service_name = _service_filter(question, hint=None)
         summary = graph.cve_summary(sample_limit=10, service_name=service_name)
         context = {"cve_summary": summary}
         if service_name:
             context["service_filter"] = service_name
         return context
+
+    service_name = _service_filter(question, hint=service_hint)
 
     # When the query is scoped to a single service the candidate path set is
     # already narrow, so we pull a wider slice (50) to ensure every vulnerable
@@ -207,6 +213,10 @@ def deterministic_answer(
 
 async def answer_question(question: str, service_hint: str | None = None) -> dict:
     context = graph_context(question, service_hint=service_hint)
+    if "cve_summary" in context:
+        answer = deterministic_answer(question, context)
+        return {"answer": answer, "context": context, "validation": validate_answer(answer, context), "model": "deterministic-count"}
+
     if not settings.groq_api_key:
         answer = deterministic_answer(question, context)
         return {"answer": answer, "context": context, "validation": validate_answer(answer, context), "model": "deterministic-local"}

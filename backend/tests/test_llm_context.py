@@ -22,8 +22,9 @@ def test_cve_count_question_uses_summary_not_attack_path_limit(monkeypatch):
 
     monkeypatch.setattr("core.llm.graph_llm.graph", FakeGraph())
 
-    context = graph_context("how many CVEs are in neo4j?")
+    context = graph_context("how many CVEs are in neo4j?", service_hint="juice-shop")
     answer = deterministic_answer("how many CVEs are in neo4j?", context)
 
     assert context["cve_summary"]["total"] == 52000
+    assert "service_filter" not in context
     assert "52,000 CVE node" in answer
