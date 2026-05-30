@@ -267,7 +267,10 @@ class GraphEngine:
               ELSE 5
             END, coalesce(n.real_risk_score, n.predicted_exploit_probability, n.epss_score, n.cvss_score / 10.0, 0.0) DESC
             LIMIT $limit
+            WITH collect(n) AS selected
+            UNWIND selected AS n
             OPTIONAL MATCH (n)-[r]->(m)
+            WHERE m IN selected
             RETURN collect(DISTINCT {
               id: elementId(n),
               label: head(labels(n)),

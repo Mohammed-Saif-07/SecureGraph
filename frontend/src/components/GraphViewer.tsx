@@ -31,7 +31,10 @@ export function GraphViewer({ nodes, links, paths }: { nodes: GraphNode[]; links
     svg.attr("viewBox", `0 0 ${width} ${height}`);
 
     const simNodes: SimNode[] = nodes.map((node) => ({ ...node }));
-    const simLinks: SimLink[] = links.map((link) => ({ ...link }));
+    const nodeIds = new Set(simNodes.map((node) => node.id));
+    const simLinks: SimLink[] = links
+      .filter((link) => nodeIds.has(link.source) && nodeIds.has(link.target))
+      .map((link) => ({ ...link }));
     const hot = new Set(paths.slice(0, 2).flatMap((path) => [path.cve_id, path.package_name, path.service_name, path.data_name]));
 
     const simulation = d3.forceSimulation(simNodes)
