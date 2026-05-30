@@ -14,6 +14,7 @@ MAX_CONTEXT_SIZE_BYTES = 10000
 
 COUNT_TERMS = ("how many", "count", "total", "kitne", "kitni", "ginti")
 CVE_TERMS = ("cve", "cves", "vulnerability", "vulnerabilities")
+PATCH_TERMS = ("patch", "fix", "remediation")
 
 
 def _json_size(value: object) -> int:
@@ -102,6 +103,11 @@ def _is_cve_count_question(question: str) -> bool:
     return any(term in lowered for term in CVE_TERMS) and any(term in lowered for term in COUNT_TERMS)
 
 
+def _is_patch_question(question: str) -> bool:
+    lowered = question.lower()
+    return any(term in lowered for term in PATCH_TERMS)
+
+
 def graph_context(question: str, service_hint: str | None = None) -> dict:
     lowered = question.lower()
     if _is_cve_count_question(question):
@@ -128,7 +134,7 @@ def graph_context(question: str, service_hint: str | None = None) -> dict:
     if service_name:
         context["service_filter"] = service_name
 
-    if "patch" in lowered or "fix" in lowered or "remediation" in lowered:
+    if _is_patch_question(question):
         # Scope remediations to the same service when the query is service-scoped
         # so the deterministic fallback doesn't recommend patches that belong to
         # a completely different repo than the one the user is asking about.
@@ -216,6 +222,9 @@ async def answer_question(question: str, service_hint: str | None = None) -> dic
     if "cve_summary" in context:
         answer = deterministic_answer(question, context)
         return {"answer": answer, "context": context, "validation": validate_answer(answer, context), "model": "deterministic-count"}
+    if _is_patch_question(question):
+        answer = deterministic_answer(question, context)
+        return {"answer": answer, "context": context, "validation": validate_answer(answer, context), "model": "deterministic-remediation"}
 
     if not settings.groq_api_key:
         answer = deterministic_answer(question, context)
